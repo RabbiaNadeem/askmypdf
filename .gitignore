@@ -127,3 +127,9 @@ venv.bak/
 dmypy.json
 # Pyre type checker
 .pyre/
+
+# Local uploads
+backend/uploads/
+
+# Local vector store
+backend/chroma_db/
