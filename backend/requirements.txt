@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-multipart
+langchain
+langchain-community
+langchain-qdrant
+langchain-groq
+pymupdf
+chromadb
+huggingface-hub
+python-dotenv
