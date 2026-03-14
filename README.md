@@ -20,6 +20,64 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Backend Setup
+
+The backend is a Python application located in the `backend/` directory.
+
+### Prerequisites
+
+- Python 3.8 or higher
+
+### Installation
+
+1. Navigate to the backend directory:
+
+   ```bash
+   cd backend
+   ```
+
+2. Create a virtual environment:
+
+   ```bash
+   python -m venv venv
+   ```
+
+3. Activate the virtual environment:
+
+   - On Windows:
+
+     ```bash
+     .\venv\Scripts\activate
+     ```
+
+   - On macOS/Linux:
+
+     ```bash
+     source venv/bin/activate
+     ```
+
+4. Install dependencies:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+5. Run the backend server (assuming there's a main.py or similar entry point).
+
+## API Usage
+
+### Upload PDF
+
+- **Endpoint**: `POST /upload`
+- **Body**: `multipart/form-data` with key `file` (PDF only, max 50MB)
+- **Response**: `{"filename": "example.pdf", "message": "File uploaded successfully"}`
+
+Example using curl:
+
+```bash
+curl -X POST -F "file=@your-file.pdf" http://localhost:8000/upload
+```
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
