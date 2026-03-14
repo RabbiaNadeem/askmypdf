@@ -9,3 +9,5 @@ pymupdf
 chromadb
 huggingface-hub
 python-dotenv
+langchain-huggingface
+sentence-transformers
