@@ -78,6 +78,18 @@ Example using curl:
 curl -X POST -F "file=@your-file.pdf" http://localhost:8000/upload
 ```
 
+### Chat with PDF
+
+- **Endpoint**: `POST /chat`
+- **Body**: `application/json` with key `question`
+- **Response**: `{"answer": "...", "sources": [{"source": "file.pdf", "page": 1, "score": 0.5}, ...]}`
+
+Example using curl:
+
+```bash
+curl -X POST -H "Content-Type: application/json" -d '{"question":"What does the document say about embeddings?"}' http://localhost:8000/chat
+```
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

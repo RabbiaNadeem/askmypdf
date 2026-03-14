@@ -4,7 +4,10 @@ from dotenv import load_dotenv
 import os
 from routes.upload import router as upload_router
 
+# Load env vars *before* importing chat routes because they initialize LLM immediately
 load_dotenv()
+
+from routes.chat import router as chat_router
 
 app = FastAPI()
 
@@ -20,6 +23,8 @@ app.add_middleware(
 )
 
 app.include_router(upload_router)
+app.include_router(chat_router)
+
 
 
 

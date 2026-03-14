@@ -2,9 +2,10 @@ import os
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 
 CHROMA_PATH = "chroma_db"
+
 COLLECTION_NAME = "local_collection"
 
 def ingest_pdf(file_path: str):
