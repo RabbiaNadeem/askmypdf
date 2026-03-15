@@ -1,76 +1,56 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Ask My PDF
 
-## Getting Started
+Local dev app that lets you upload a PDF, ingest it into a local Chroma vector store, and chat with the document.
 
-First, run the development server:
+This repository contains a Next.js frontend and a FastAPI backend.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Quick start (Windows / PowerShell)
+
+1. Create and activate Python venv
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r backend/requirements.txt
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Start the FastAPI backend (default: port 8000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```powershell
+cd backend
+uvicorn main:app --reload
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+3. Install frontend deps and run Next.js
 
-## Backend Setup
+```powershell
+cd ..
+npm install
+npm run dev
+```
 
-The backend is a Python application located in the `backend/` directory.
+4. Open the app
 
-### Prerequisites
+- Frontend: http://localhost:3000
+- Backend health: http://127.0.0.1:8000/
 
-- Python 3.8 or higher
+## How it works
 
-### Installation
+- Upload a PDF on the homepage. The file is POSTed to `/api/upload` (Next.js proxy), which forwards to the FastAPI `/upload` endpoint.
+- The backend ingests the PDF into a local Chroma DB under `backend/chroma_db/`.
+- Visit `/chat` to ask questions. The frontend proxies chat requests to `/api/chat`, which forwards to FastAPI `/chat` and streams token updates back to the UI.
 
-1. Navigate to the backend directory:
+## Environment variables
 
-   ```bash
-   cd backend
-   ```
+- `GROQ_API_KEY` (or whichever model provider key you use) — set in your environment or CI/CD secrets. Do NOT commit API keys to git.
+- `BACKEND_URL` (optional) — used by the Next.js proxy when the backend is not at the default `http://127.0.0.1:8000`.
 
-2. Create a virtual environment:
-
-   ```bash
-   python -m venv venv
-   ```
-
-3. Activate the virtual environment:
-
-   - On Windows:
-
-     ```bash
-     .\venv\Scripts\activate
-     ```
-
-   - On macOS/Linux:
-
-     ```bash
-     source venv/bin/activate
-     ```
-
-4. Install dependencies:
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-5. Run the backend server (assuming there's a main.py or similar entry point).
-
-## API Usage
+## Testing the API directly
 
 ### Upload PDF
 
 - **Endpoint**: `POST /upload`
 - **Body**: `multipart/form-data` with key `file` (PDF only, max 50MB)
-- **Response**: `{"filename": "example.pdf", "message": "File uploaded successfully"}`
 
 Example using curl:
 
@@ -82,7 +62,6 @@ curl -X POST -F "file=@your-file.pdf" http://localhost:8000/upload
 
 - **Endpoint**: `POST /chat`
 - **Body**: `application/json` with key `question`
-- **Response**: `{"answer": "...", "sources": [{"source": "file.pdf", "page": 1, "score": 0.5}, ...]}`
 
 Example using curl:
 
@@ -90,17 +69,16 @@ Example using curl:
 curl -X POST -H "Content-Type: application/json" -d '{"question":"What does the document say about embeddings?"}' http://localhost:8000/chat
 ```
 
-## Learn More
+## Notes & troubleshooting
 
-To learn more about Next.js, take a look at the following resources:
+- Don't commit large files (vector DB, uploads). These folders are in `.gitignore`.
+- If chat/upload fails with connection errors, verify the backend is running and that `BACKEND_URL` (if set) is correct.
+- To restrict chat to a single uploaded PDF, the backend can be updated to accept an optional `filename` and filter retrieval results by that filename.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deploy
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+To deploy the frontend, Vercel is recommended for Next.js apps. Keep backend secrets in GitHub Actions / Vercel environment variables and do not commit them.
 
-## Deploy on Vercel
+## Contributing
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This is a small demo/work-in-progress. Open an issue or PR with improvements.
