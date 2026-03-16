@@ -141,3 +141,6 @@ chroma_db/
 
 # Local vector store
 backend/chroma_db/
+
+# Repo-level storage (uploads + chroma)
+storage/

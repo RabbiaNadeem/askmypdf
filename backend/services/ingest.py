@@ -4,9 +4,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 
-CHROMA_PATH = "chroma_db"
-
-COLLECTION_NAME = "local_collection"
+from config import settings
 
 def ingest_pdf(file_path: str):
     """
@@ -47,8 +45,8 @@ def ingest_pdf(file_path: str):
     Chroma.from_documents(
         documents=chunks,
         embedding=embedding_function,
-        persist_directory=CHROMA_PATH,
-        collection_name=COLLECTION_NAME
+        persist_directory=settings.CHROMA_PATH,
+        collection_name=settings.CHROMA_COLLECTION,
     )
     
     return len(chunks)

@@ -8,13 +8,13 @@ function normalizeBackendUrl(url: string): string {
 
 function buildBackendCandidates(baseUrl: string): string[] {
   const normalized = normalizeBackendUrl(baseUrl);
-  const candidates = new Set<string>([normalized]);
+  const candidates = new Set<string>([
+    normalized.replace('localhost', '127.0.0.1'),
+    normalized,
+  ]);
 
-  // Common local-dev fallbacks
-  candidates.add(normalized.replace('127.0.0.1', 'localhost'));
-  candidates.add(normalized.replace('localhost', '127.0.0.1'));
+  // Common local-dev fallback (prefer IPv4 loopback to avoid ::1 issues)
   candidates.add(normalized.replace('0.0.0.0', '127.0.0.1'));
-  candidates.add(normalized.replace('0.0.0.0', 'localhost'));
 
   return Array.from(candidates).filter(Boolean);
 }

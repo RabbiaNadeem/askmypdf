@@ -125,7 +125,8 @@ export default function Home() {
             "rounded-xl border-2 border-dashed bg-white p-8 transition-colors " +
             (dragActive ? 'border-zinc-900' : 'border-zinc-200')
           }
-          onClick={() => {
+          onClick={(e) => {
+            if (e.target !== e.currentTarget) return;
             if (isBusy) return;
             fileInputRef.current?.click();
           }}
@@ -183,7 +184,10 @@ export default function Home() {
                 type="button"
                 className="inline-flex h-10 items-center justify-center rounded-md bg-zinc-900 px-4 text-sm font-medium text-white disabled:opacity-50"
                 disabled={isBusy}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fileInputRef.current?.click();
+                }}
               >
                 Select PDF
               </button>
@@ -198,6 +202,7 @@ export default function Home() {
                 }
                 aria-disabled={!canChat}
                 tabIndex={canChat ? 0 : -1}
+                onClick={(e) => e.stopPropagation()}
               >
                 Go to chat
               </Link>

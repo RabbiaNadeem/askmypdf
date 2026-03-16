@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import List
 
 from dotenv import load_dotenv
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 
 
 load_dotenv()
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_STORAGE_DIR = PROJECT_ROOT / "storage"
 
 
 class Settings(BaseSettings):
@@ -15,11 +20,11 @@ class Settings(BaseSettings):
 	CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
 
 	# Uploads
-	UPLOAD_DIR: str = "uploads"
+	UPLOAD_DIR: str = str(DEFAULT_STORAGE_DIR / "uploads")
 	MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50 MB
 
 	# Chroma
-	CHROMA_PATH: str = "chroma_db"
+	CHROMA_PATH: str = str(DEFAULT_STORAGE_DIR / "chroma_db")
 	CHROMA_COLLECTION: str = "local_collection"
 
 	# LLM (Groq)

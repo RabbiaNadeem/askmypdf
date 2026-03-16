@@ -8,12 +8,12 @@ function normalizeBackendUrl(url: string): string {
 
 function buildBackendCandidates(baseUrl: string): string[] {
   const normalized = normalizeBackendUrl(baseUrl);
-  const candidates = new Set<string>([normalized]);
+  const candidates = new Set<string>([
+    normalized.replace('localhost', '127.0.0.1'),
+    normalized,
+  ]);
 
-  candidates.add(normalized.replace('127.0.0.1', 'localhost'));
-  candidates.add(normalized.replace('localhost', '127.0.0.1'));
   candidates.add(normalized.replace('0.0.0.0', '127.0.0.1'));
-  candidates.add(normalized.replace('0.0.0.0', 'localhost'));
 
   return Array.from(candidates).filter(Boolean);
 }

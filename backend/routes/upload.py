@@ -1,13 +1,9 @@
 from fastapi import APIRouter, File, UploadFile, HTTPException
 import os
 
+from config import settings
+
 router = APIRouter()
-
-
-UPLOAD_DIR = "uploads"
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
-
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
@@ -22,7 +18,8 @@ async def upload_file(file: UploadFile = File(...)):
     await file.seek(0)  # Reset cursor
 
     file.filename = os.path.basename(file.filename)
-    file_path = os.path.join(UPLOAD_DIR, file.filename)
+    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+    file_path = os.path.join(settings.UPLOAD_DIR, file.filename)
     
     # Save the file with size validation
     try:
@@ -30,7 +27,7 @@ async def upload_file(file: UploadFile = File(...)):
         with open(file_path, "wb") as buffer:
             while chunk := await file.read(1024 * 1024):  # Read 1MB chunks
                 size += len(chunk)
-                if size > MAX_FILE_SIZE:
+                if size > settings.MAX_FILE_SIZE:
                     buffer.close()
                     os.remove(file_path)
                     raise HTTPException(status_code=413, detail="File too large (max 50MB)")

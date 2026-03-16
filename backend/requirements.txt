@@ -11,3 +11,5 @@ huggingface-hub
 python-dotenv
 langchain-huggingface
 sentence-transformers
+langchain-chroma
+pydantic-settings

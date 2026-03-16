@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
 import { TextStreamChatTransport } from 'ai';
 import { useChat } from '@ai-sdk/react';
@@ -18,6 +18,7 @@ export default function ChatPage() {
     if (typeof window === 'undefined') return null;
     return localStorage.getItem('askmypdf:lastUploaded');
   });
+  const bottomRef = useRef<HTMLDivElement | null>(null);
 
   const chatEnabled = !!uploadedFilename;
 
@@ -37,6 +38,10 @@ export default function ChatPage() {
       .filter((part) => part.type === 'text')
       .map((part) => part.text)
       .join('');
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, status]);
 
   return (
     <div className="flex flex-col h-screen max-w-2xl mx-auto p-4">
@@ -81,6 +86,7 @@ export default function ChatPage() {
                  </div>
             </div>
         )}
+        <div ref={bottomRef} />
       </div>
 
       <form onSubmit={onSubmit} className="flex gap-2 border-t pt-4 bg-white/50 backdrop-blur-sm sticky bottom-0 pb-4">
