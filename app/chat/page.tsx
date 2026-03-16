@@ -43,68 +43,126 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, status]);
 
+  const handleSuggestionClick = async (prompt: string) => {
+    if (!chatEnabled || isLoading) return;
+    await sendMessage({ text: prompt });
+  };
+
   return (
-    <div className="flex flex-col h-screen max-w-2xl mx-auto p-4">
-      <header className="py-4 border-b mb-4">
-        <h1 className="text-xl font-bold">Ask My PDF</h1>
-        {uploadedFilename ? (
-          <p className="text-sm text-gray-500 mt-1">Active PDF: {uploadedFilename}</p>
-        ) : (
-          <p className="text-sm text-gray-500 mt-1">
-            Upload a PDF to start.{' '}
-            <Link href="/" className="underline">
-              Go to upload
-            </Link>
-          </p>
-        )}
-      </header>
-      
-      <div className="flex-1 overflow-y-auto space-y-4 mb-4">
+    <div className="neu-page flex h-screen flex-col px-4">
+      <div className="mx-auto flex h-full w-full max-w-2xl flex-col py-4">
+        <header className="mb-4">
+          <div className="neu-header-bar flex items-center justify-between gap-4">
+            <div className="space-y-0.5">
+              <h1 className="neu-title text-lg font-bold text-zinc-900">Ask My PDF</h1>
+              <p className="text-xs font-medium text-gray-600">
+                Ask questions, extract structure, and dig for details.
+              </p>
+            </div>
+            {uploadedFilename ? (
+              <div className="flex flex-col items-end gap-1 text-right">
+                <span className="text-[0.65rem] font-semibold tracking-[0.2em] uppercase text-gray-500">
+                  Active PDF
+                </span>
+                <span className="neu-label-inset max-w-[10rem] truncate" title={uploadedFilename}>
+                  {uploadedFilename}
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-col items-end text-right text-xs text-gray-600">
+                <span className="font-medium">Upload a PDF to start.</span>
+                <Link href="/" className="underline">
+                  Go to upload
+                </Link>
+              </div>
+            )}
+          </div>
+        </header>
+
+        <div className="neu-scroll mb-4 flex-1 space-y-4 overflow-y-auto pr-1">
         {messages.length === 0 ? (
-          <div className="text-center text-gray-500 mt-20">
-            <p>{chatEnabled ? 'Ask a question to get started.' : 'Upload a PDF first to enable chat.'}</p>
+          <div className="mt-16 flex flex-col items-center gap-4 text-center">
+            <p className="text-sm font-medium text-gray-700">
+              {chatEnabled
+                ? 'Jump in with one of these prompts, or ask your own question.'
+                : 'Upload a PDF first to enable chat.'}
+            </p>
+            {chatEnabled && (
+              <div className="flex flex-wrap justify-center gap-2">
+                <button
+                  type="button"
+                  className="neu-chip"
+                  onClick={() => handleSuggestionClick('Summarize this PDF in 5 bullet points.')}
+                >
+                  Summarize this PDF
+                </button>
+                <button
+                  type="button"
+                  className="neu-chip"
+                  onClick={() => handleSuggestionClick('Extract all important dates and events from this PDF.')}
+                >
+                  Extract key dates
+                </button>
+                <button
+                  type="button"
+                  className="neu-chip"
+                  onClick={() => handleSuggestionClick('List the main concepts and definitions in this PDF.')}
+                >
+                  Key concepts & definitions
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           messages.map(m => (
             <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div 
-                className={`max-w-[80%] rounded-lg p-3 ${
-                  m.role === 'user' 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-gray-100 text-gray-800'
+                className={`max-w-[80%] p-3 text-sm whitespace-pre-wrap ${
+                  m.role === 'user' ? 'neu-chat-bubble-user' : 'neu-chat-bubble-ai'
                 }`}
               >
-                  <p className="whitespace-pre-wrap text-sm">{getMessageText(m)}</p>
+                  {getMessageText(m)}
               </div>
             </div>
           ))
         )}
         {isLoading && messages[messages.length - 1]?.role === 'user' && (
             <div className="flex justify-start">
-                 <div className="max-w-[80%] rounded-lg p-3 bg-gray-100 text-gray-800">
-                    <span className="animate-pulse text-sm">Thinking...</span>
-                 </div>
+              <div className="neu-chat-bubble-ai max-w-[80%] p-3">
+                <div className="neu-skeleton-row">
+                  <div className="neu-skeleton-block" />
+                  <div className="neu-skeleton-block" />
+                  <div className="neu-skeleton-block" />
+                </div>
+              </div>
             </div>
         )}
         <div ref={bottomRef} />
-      </div>
+        </div>
 
-      <form onSubmit={onSubmit} className="flex gap-2 border-t pt-4 bg-white/50 backdrop-blur-sm sticky bottom-0 pb-4">
-        <input
-          className="flex-1 p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask a question..."
-          disabled={!chatEnabled || isLoading}
-        />
-        <button
-          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 font-medium"
-          type="submit"
-          disabled={!chatEnabled || isLoading || !input.trim()}
-        >
-          Send
-        </button>
-      </form>
+        <form onSubmit={onSubmit} className="mt-1">
+          <div className="neu-input-well flex items-center gap-3 px-4 py-3">
+            <input
+              className="neu-input-field flex-1 text-sm font-medium"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={chatEnabled ? 'Ask a question about your PDF…' : 'Upload a PDF to start chatting…'}
+              disabled={!chatEnabled || isLoading}
+            />
+            <button
+              className="neu-send-btn"
+              type="submit"
+              disabled={!chatEnabled || isLoading || !input.trim()}
+              aria-label="Send message"
+            >
+              <span aria-hidden="true">
+                
+                ➤
+              </span>
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

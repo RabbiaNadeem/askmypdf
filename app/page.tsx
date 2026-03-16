@@ -112,18 +112,21 @@ export default function Home() {
     [startUpload],
   );
 
+  const showPulse = !isBusy && (stage === 'idle' || stage === 'ready');
+
   return (
-    <div className="min-h-screen bg-zinc-50">
-      <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 py-10">
-        <header className="space-y-1">
-          <h1 className="text-2xl font-bold text-zinc-900">Ask My PDF</h1>
-          <p className="text-sm text-zinc-600">Upload a single PDF to enable chat.</p>
+    <div className="min-h-screen neu-page flex items-center justify-center px-4">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-8 py-10">
+        <header className="space-y-1 text-center">
+          <h1 className="neu-title text-4xl text-zinc-900">Ask My PDF</h1>
+          <p className="text-sm font-medium text-zinc-700">Upload a single PDF to unlock chat.</p>
         </header>
 
         <div
           className={
-            "rounded-xl border-2 border-dashed bg-white p-8 transition-colors " +
-            (dragActive ? 'border-zinc-900' : 'border-zinc-200')
+            "neu-panel-inset p-8 sm:p-10 cursor-pointer " +
+            (dragActive ? ' neu-panel-inset-hover' : '') +
+            (showPulse ? ' neu-panel-inset-pulse' : '')
           }
           onClick={(e) => {
             if (e.target !== e.currentTarget) return;
@@ -155,14 +158,17 @@ export default function Home() {
             }
           }}
         >
-          <div className="flex flex-col items-center gap-3 text-center">
-            <div className="text-sm font-medium text-zinc-900">{statusText}</div>
+          <div className="flex flex-col items-center gap-4 text-center">
+            <div className="text-xs font-semibold tracking-[0.25em] uppercase text-zinc-600">
+              Upload PDF
+            </div>
+            <div className="text-base font-semibold text-zinc-900">{statusText}</div>
 
             {stage === 'uploading' && (
               <div className="w-full max-w-md">
-                <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-200/60">
                   <div
-                    className="h-2 bg-zinc-900"
+                    className="h-2 rounded-full bg-zinc-900"
                     style={{ width: `${Math.max(1, Math.min(100, progress))}%` }}
                   />
                 </div>
@@ -171,7 +177,11 @@ export default function Home() {
 
             {stage === 'ready' && result?.filename && (
               <div className="text-sm text-zinc-700">
-                Uploaded: <span className="font-medium">{result.filename}</span>
+                <span className="neu-pill-raised">
+                  <span className="neu-pill-dot" aria-hidden="true" />
+                  <span>Active PDF</span>
+                  <span className="truncate max-w-[10rem]">{result.filename}</span>
+                </span>
               </div>
             )}
 
@@ -179,10 +189,10 @@ export default function Home() {
               <div className="text-sm text-red-600">{error}</div>
             )}
 
-            <div className="mt-2 flex w-full max-w-md flex-col gap-2 sm:flex-row">
+            <div className="mt-4 flex w-full max-w-md flex-col gap-3 sm:flex-row">
               <button
                 type="button"
-                className="inline-flex h-10 items-center justify-center rounded-md bg-zinc-900 px-4 text-sm font-medium text-white disabled:opacity-50"
+                className="neu-btn neu-btn-primary inline-flex h-10 items-center justify-center"
                 disabled={isBusy}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -195,10 +205,10 @@ export default function Home() {
               <Link
                 href="/chat"
                 className={
-                  "inline-flex h-10 items-center justify-center rounded-md border px-4 text-sm font-medium " +
+                  "inline-flex h-10 items-center justify-center text-sm font-medium " +
                   (canChat
-                    ? 'border-zinc-200 bg-white text-zinc-900'
-                    : 'pointer-events-none border-zinc-200 bg-zinc-100 text-zinc-500')
+                    ? 'neu-btn neu-btn-accent'
+                    : 'pointer-events-none neu-btn neu-btn-accent opacity-60')
                 }
                 aria-disabled={!canChat}
                 tabIndex={canChat ? 0 : -1}

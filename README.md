@@ -79,6 +79,21 @@ curl -X POST -H "Content-Type: application/json" -d '{"question":"What does the 
 
 To deploy the frontend, Vercel is recommended for Next.js apps. Keep backend secrets in GitHub Actions / Vercel environment variables and do not commit them.
 
+## UI / Design Notes
+
+This project uses a Neumorphic-inspired UI across the upload and chat experiences:
+
+- Soft inset “carved” dropzone for file uploads
+- Raised buttons with press/hover depth animation
+- Distinct “user” vs. “AI” chat bubbles with clear contrast
+- Suggestion chips and skeleton loading states to reduce friction
+
 ## Contributing
 
 This is a small demo/work-in-progress. Open an issue or PR with improvements.
+
+### Committing changes
+
+To ensure a clean git history when contributing, make sure you only stage the files you actually modified (for example, `app/globals.css`, `app/page.tsx`, `app/chat/page.tsx`, etc.).
+
+The repository ignores local build artifacts and generated content (e.g., `.next/`, `backend/chroma_db/`, `uploads/`), so your commits should generally only include source code and docs.
