@@ -47,10 +47,6 @@ npm run dev
 - The upload response includes a `collection` id; the frontend stores it and sends it with each chat request.
 - Visit `/chat` to ask questions. The frontend proxies chat requests to `/api/chat`, which forwards to FastAPI `/chat` and streams token updates back to the UI (including citation metadata).
 
-### Citation badges & confidence
-
-When the backend can retrieve relevant PDF text, the UI shows clickable citation badges like `MyDoc.pdf · p.2 · 90%`. The percentage is a **normalized similarity score** (higher is better). If the question is not supported by the document (or the matching text doesn’t contain your keywords), no citation badges are shown and the assistant will respond with a safe fallback.
-
 ## Environment variables
 
 - `GROQ_API_KEY` (or whichever model provider key you use) — set in your environment or CI/CD secrets. Do NOT commit API keys to git.

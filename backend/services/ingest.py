@@ -26,7 +26,7 @@ def ingest_pdf(file_path: str):
     
     # 2. Split Text (RecursiveCharacterTextSplitter)
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=800,
+        chunk_size=1000,
         chunk_overlap=200,
         length_function=len,
         add_start_index=True,

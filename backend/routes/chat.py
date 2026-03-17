@@ -58,20 +58,6 @@ def _clamp01(value: float) -> float:
     return v
 
 
-def _distance_to_similarity(raw: float) -> float:
-    """Convert a vector distance into a similarity score in [0,1].
-
-    Qdrant's cosine distance is typically defined as ``1 - cosine_similarity``.
-    We invert that and clamp to [0,1] so that higher is always better.
-    """
-    try:
-        d = float(raw)
-    except Exception:
-        return 0.0
-    sim = 1.0 - d
-    return _clamp01(sim)
-
-
 def _make_citations(results: list[tuple[Any, float]]) -> list[dict[str, Any]]:
     citations: list[dict[str, Any]] = []
     for idx, (doc, score) in enumerate(results):
@@ -189,14 +175,7 @@ def _extract_keywords(question: str) -> list[str]:
     phrases = [p for p in strong_phrases if p in q]
 
     words = re.findall(r"[a-z0-9]+", q)
-
-    # Prefer longer, more specific terms first.
     keywords = [w for w in words if len(w) >= 4 and w not in _STOPWORDS]
-
-    # If nothing survives, fall back to 3-letter terms so that
-    # acronyms like "nlp" still act as gating keywords.
-    if not keywords:
-        keywords = [w for w in words if len(w) >= 3 and w not in _STOPWORDS]
 
     # De-dupe while preserving order.
     seen: set[str] = set()
@@ -272,17 +251,10 @@ async def chat(request: ChatRequest):
         )
     )
 
-    # Convert backend distance scores into similarity in [0,1] (higher is better).
-    similarity_results: list[tuple[Any, float]] = [
-        (doc, _distance_to_similarity(score)) for (doc, score) in raw_results
-    ]
-
     min_score = float(getattr(settings, "RAG_MIN_SCORE", 0.55) or 0.55)
 
-    # Basic score cutoff (minimum similarity)
-    scored_results = [
-        (doc, score) for (doc, score) in similarity_results if float(score) >= min_score
-    ]
+    # Basic score cutoff
+    scored_results = [(doc, score) for (doc, score) in raw_results if float(score) >= min_score]
 
     # Topic gating: only keep chunks that actually mention the topic keywords.
     # This prevents "fallback" answers from still showing unrelated citations.
