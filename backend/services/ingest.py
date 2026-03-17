@@ -1,15 +1,16 @@
 import os
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma
+from langchain_qdrant import QdrantVectorStore
 
 from config import settings
+from services.retrieval import get_embeddings, make_collection_name
 
 def ingest_pdf(file_path: str):
     """
-    Ingests a PDF file into the local ChromaDB.
-    Returns: The number of chunks added.
+    Ingests a PDF file into Qdrant.
+    Collections are scoped per document.
+    Returns: (chunk_count, collection_name)
     """
 
     # 1. Load PDF
@@ -20,33 +21,39 @@ def ingest_pdf(file_path: str):
     documents = loader.load()
     
     if not documents:
-        return 0
+        filename = os.path.basename(file_path)
+        return 0, make_collection_name(filename)
     
-    # 2. Split Text (RecursiveCharacterTextSplitter 500/100)
+    # 2. Split Text (RecursiveCharacterTextSplitter)
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=100,
+        chunk_size=800,
+        chunk_overlap=200,
         length_function=len,
         add_start_index=True,
     )
     chunks = text_splitter.split_documents(documents)
     
     if not chunks:
-        return 0
+        filename = os.path.basename(file_path)
+        return 0, make_collection_name(filename)
 
-    # 3. Embeddings (Local HuggingFace all-MiniLM-L6-v2)
-    # This will download the model (~80MB) on first run
-    embedding_function = HuggingFaceEmbeddings(
-        model_name="all-MiniLM-L6-v2"
+    # 3. Qdrant collection per document
+    filename = os.path.basename(file_path)
+    collection_name = make_collection_name(filename)
+
+    # 4. Store in Qdrant
+    # NOTE: langchain-qdrant 1.1.x expects url/api_key (not a pre-built client) for this helper.
+    texts = [doc.page_content for doc in chunks]
+    metadatas = [doc.metadata for doc in chunks]
+
+    QdrantVectorStore.from_texts(
+        texts=texts,
+        embedding=get_embeddings(),
+        metadatas=metadatas,
+        collection_name=collection_name,
+        url=settings.QDRANT_URL,
+        api_key=settings.QDRANT_API_KEY,
+        force_recreate=True,
     )
-    
-    # 4. Store in ChromaDB
-    # Persist directly to disk
-    Chroma.from_documents(
-        documents=chunks,
-        embedding=embedding_function,
-        persist_directory=settings.CHROMA_PATH,
-        collection_name=settings.CHROMA_COLLECTION,
-    )
-    
-    return len(chunks)
+
+    return len(chunks), collection_name

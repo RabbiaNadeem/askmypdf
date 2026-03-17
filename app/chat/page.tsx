@@ -3,12 +3,64 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
-import { TextStreamChatTransport } from 'ai';
+import { DefaultChatTransport } from 'ai';
 import { useChat } from '@ai-sdk/react';
+
+type Citation = {
+  id: string;
+  filename: string;
+  page: number;
+  score: number;
+  snippet: string;
+};
+
+type CitationsPart = {
+  type: 'data-citations';
+  id?: string;
+  data: Citation[];
+};
+
+function dedupeCitationsByPage(items: Citation[]): Citation[] {
+  const best = new Map<string, Citation>();
+
+  for (const c of items) {
+    const key = `${c.filename}||${c.page}`;
+    const prev = best.get(key);
+    if (!prev || c.score > prev.score) {
+      best.set(key, { ...c, id: key });
+    }
+  }
+
+  return Array.from(best.values()).sort((a, b) => b.score - a.score);
+}
+
+function isCitationsPart(part: unknown): part is CitationsPart {
+  return (
+    typeof part === 'object' &&
+    part !== null &&
+    (part as { type?: unknown }).type === 'data-citations' &&
+    Array.isArray((part as { data?: unknown }).data)
+  );
+}
+
+function scoreTone(score: number): 'good' | 'mid' | 'bad' {
+  // User-facing confidence buckets.
+  // green  > 85%
+  // yellow 70–85%
+  // red    < 70%
+  if (score > 0.85) return 'good';
+  if (score >= 0.7) return 'mid';
+  return 'bad';
+}
+
+function formatConfidence(score: number): string {
+  const clamped = Math.max(0, Math.min(1, score));
+  return `${Math.round(clamped * 100)}%`;
+}
 
 export default function ChatPage() {
   const { messages, sendMessage, status } = useChat({
-    transport: new TextStreamChatTransport({ api: '/api/chat' }),
+    transport: new DefaultChatTransport({ api: '/api/chat' }),
   });
 
   const isLoading = status === 'submitted' || status === 'streaming';
@@ -18,9 +70,17 @@ export default function ChatPage() {
     if (typeof window === 'undefined') return null;
     return localStorage.getItem('askmypdf:lastUploaded');
   });
+  const [uploadedCollection] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem('askmypdf:lastCollection');
+  });
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  const chatEnabled = !!uploadedFilename;
+  const chatEnabled = !!uploadedFilename && !!uploadedCollection;
+
+  const [openCitation, setOpenCitation] = useState<
+    { messageId: string; citationId: string } | null
+  >(null);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -30,7 +90,14 @@ export default function ChatPage() {
     if (!question) return;
 
     setInput('');
-    await sendMessage({ text: question });
+    await sendMessage(
+      { text: question },
+      {
+        body: {
+          collection: uploadedCollection,
+        },
+      },
+    );
   }
 
   const getMessageText = (message: UIMessage) =>
@@ -45,7 +112,20 @@ export default function ChatPage() {
 
   const handleSuggestionClick = async (prompt: string) => {
     if (!chatEnabled || isLoading) return;
-    await sendMessage({ text: prompt });
+    await sendMessage(
+      { text: prompt },
+      {
+        body: {
+          collection: uploadedCollection,
+        },
+      },
+    );
+  };
+
+  const getCitations = (message: UIMessage): Citation[] => {
+    const parts = Array.isArray(message.parts) ? message.parts : [];
+    const found = parts.find(isCitationsPart);
+    return dedupeCitationsByPage(found?.data ?? []);
   };
 
   return (
@@ -115,15 +195,75 @@ export default function ChatPage() {
           </div>
         ) : (
           messages.map(m => (
+            (() => {
+              const citations = m.role === 'assistant' ? getCitations(m) : [];
+              const showCitations = citations.length > 0;
+              return (
             <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div 
-                className={`max-w-[80%] p-3 text-sm whitespace-pre-wrap ${
-                  m.role === 'user' ? 'neu-chat-bubble-user' : 'neu-chat-bubble-ai'
-                }`}
-              >
+              <div className="max-w-[80%]">
+                <div
+                  className={`p-3 text-sm whitespace-pre-wrap ${
+                    m.role === 'user' ? 'neu-chat-bubble-user' : 'neu-chat-bubble-ai'
+                  }`}
+                >
                   {getMessageText(m)}
+                </div>
+
+                {m.role === 'assistant' && showCitations && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {citations.map((c) => {
+                      const tone = scoreTone(c.score);
+                      const active =
+                        openCitation?.messageId === m.id && openCitation?.citationId === c.id;
+
+                      const badgeClasses =
+                        tone === 'good'
+                          ? 'bg-emerald-600/90 text-white'
+                          : tone === 'mid'
+                            ? 'bg-amber-500/90 text-white'
+                            : 'bg-rose-600/90 text-white';
+
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          className={
+                            `rounded-full px-3 py-1 text-xs font-semibold shadow-sm transition-opacity ${badgeClasses} ` +
+                            (active ? 'opacity-100' : 'opacity-90 hover:opacity-100')
+                          }
+                          onClick={() => {
+                            setOpenCitation((prev) => {
+                              if (prev?.messageId === m.id && prev?.citationId === c.id) return null;
+                              return { messageId: m.id, citationId: c.id };
+                            });
+                          }}
+                          title={`${c.filename} • p.${c.page} • confidence ${formatConfidence(c.score)}`}
+                        >
+                          {c.filename} · p.{c.page} · {formatConfidence(c.score)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {m.role === 'assistant' && showCitations && openCitation?.messageId === m.id && (
+                  (() => {
+                    const c = citations.find((x) => x.id === openCitation.citationId);
+                    if (!c) return null;
+                    return (
+                      <div className="mt-2 neu-chat-bubble-ai p-3 text-xs text-gray-800">
+                        <div className="font-semibold text-gray-900">
+                          {c.filename} — page {c.page} (confidence {formatConfidence(c.score)})
+                        </div>
+                        <div className="mt-1 text-gray-700">{c.snippet}</div>
+                      </div>
+                    );
+                  })()
+                )}
               </div>
             </div>
+              );
+            })()
           ))
         )}
         {isLoading && messages[messages.length - 1]?.role === 'user' && (
@@ -146,7 +286,11 @@ export default function ChatPage() {
               className="neu-input-field flex-1 text-sm font-medium"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={chatEnabled ? 'Ask a question about your PDF…' : 'Upload a PDF to start chatting…'}
+              placeholder={
+                chatEnabled
+                  ? 'Ask a question about your PDF…'
+                  : 'Upload a PDF (and ingest) to start chatting…'
+              }
               disabled={!chatEnabled || isLoading}
             />
             <button

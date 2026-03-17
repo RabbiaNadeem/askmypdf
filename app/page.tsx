@@ -9,6 +9,7 @@ type UploadSuccess = {
   filename: string;
   message?: string;
   chunks?: number;
+  collection?: string;
 };
 
 function formatPercent(value: number) {
@@ -81,6 +82,9 @@ export default function Home() {
             setStage('ready');
             if (json?.filename) {
               localStorage.setItem('askmypdf:lastUploaded', json.filename);
+            }
+            if (json?.collection) {
+              localStorage.setItem('askmypdf:lastCollection', json.collection);
             }
           } catch {
             setStage('error');

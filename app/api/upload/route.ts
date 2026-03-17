@@ -23,6 +23,9 @@ async function sleep(ms: number) {
   await new Promise((r) => setTimeout(r, ms));
 }
 
+const MAX_UPLOAD_ATTEMPTS_PER_CANDIDATE = 5;
+const INITIAL_RETRY_DELAY_MS = 250;
+
 async function uploadToBackend(backendUrl: string, file: File): Promise<Response> {
   const form = new FormData();
   form.append('file', file, file.name);
@@ -52,15 +55,16 @@ export async function POST(req: NextRequest) {
     let lastError: unknown = null;
 
     for (const candidate of candidates) {
-      for (let attempt = 0; attempt < 2; attempt++) {
+      for (let attempt = 0; attempt < MAX_UPLOAD_ATTEMPTS_PER_CANDIDATE; attempt++) {
         try {
           response = await uploadToBackend(candidate, file);
           lastError = null;
           break;
         } catch (err) {
           lastError = err;
-          // transient: retry once after a short delay
-          if (attempt === 0) await sleep(200);
+          // transient: retry with a small backoff (backend may be starting/reloading)
+          const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt);
+          await sleep(Math.min(delay, 2000));
         }
       }
       if (response) break;

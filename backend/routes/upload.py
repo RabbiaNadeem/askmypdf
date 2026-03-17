@@ -36,7 +36,7 @@ async def upload_file(file: UploadFile = File(...)):
         # --- RAG Ingest Service Call ---
         # TODO: Move to background task for better UX? For now, sync is fine as requested
         from services.ingest import ingest_pdf
-        chunk_count = ingest_pdf(file_path)
+        chunk_count, collection_name = ingest_pdf(file_path)
         
     except Exception as e:
         if os.path.exists(file_path):
@@ -45,5 +45,10 @@ async def upload_file(file: UploadFile = File(...)):
             raise e
         raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
 
-    return {"filename": file.filename, "message": "File uploaded and ingested successfully", "chunks": chunk_count}
+    return {
+        "filename": file.filename,
+        "message": "File uploaded and ingested successfully",
+        "chunks": chunk_count,
+        "collection": collection_name,
+    }
 

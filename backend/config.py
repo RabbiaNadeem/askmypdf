@@ -23,9 +23,25 @@ class Settings(BaseSettings):
 	UPLOAD_DIR: str = str(DEFAULT_STORAGE_DIR / "uploads")
 	MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50 MB
 
-	# Chroma
-	CHROMA_PATH: str = str(DEFAULT_STORAGE_DIR / "chroma_db")
-	CHROMA_COLLECTION: str = "local_collection"
+	# Qdrant (Cloud or local)
+	# For Qdrant Cloud, set QDRANT_URL to your cluster URL and QDRANT_API_KEY.
+	QDRANT_URL: str = "http://localhost:6333"
+	QDRANT_API_KEY: str | None = None
+	QDRANT_COLLECTION_PREFIX: str = "askmypdf_"
+
+	# RAG
+	# Qdrant similarity scores are typically higher-is-better; tune if needed.
+	RAG_TOP_K: int = 30
+	RAG_MIN_SCORE: float = 0.20
+	# How many retrieved chunks are included in the LLM prompt context.
+	# Keep this independent from how many citations the UI shows.
+	CONTEXT_MAX_CHUNKS: int = 6
+
+	# Citations
+	# Limit how many references we show in the UI.
+	CITATIONS_MAX: int = 1
+	# Optional extra cutoff for citations (can be >= RAG_MIN_SCORE).
+	CITATIONS_MIN_SCORE: float = 0.20
 
 	# LLM (Groq)
 	GROQ_API_KEY: str | None = None
@@ -42,9 +58,8 @@ settings = Settings()
 
 
 def ensure_dirs() -> None:
-	"""Create required local directories (uploads, chroma) if missing."""
+	"""Create required local directories (uploads) if missing."""
 	os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-	os.makedirs(settings.CHROMA_PATH, exist_ok=True)
 
 
 ensure_dirs()
