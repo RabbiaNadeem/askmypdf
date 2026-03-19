@@ -111,6 +111,28 @@ function buildEffectiveQuestion(messages: unknown[]): string {
   return current;
 }
 
+function parseBackendErrorMessage(errorText: string): string {
+  const trimmed = (errorText || '').trim();
+  if (!trimmed) return '';
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (isRecord(parsed)) {
+      const detail = parsed.detail;
+      if (typeof detail === 'string' && detail.trim()) return detail.trim();
+      const err = parsed.error;
+      if (typeof err === 'string' && err.trim()) return err.trim();
+      const message = parsed.message;
+      if (typeof message === 'string' && message.trim()) return message.trim();
+    }
+  } catch {
+    // ignore
+  }
+
+  // fall back to raw text (truncate to keep payload reasonable)
+  return trimmed.length > 600 ? `${trimmed.slice(0, 600)}…` : trimmed;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -169,7 +191,8 @@ export async function POST(req: NextRequest) {
       console.error('Chat proxy failed to reach backend', { candidates, lastError });
       return NextResponse.json(
         {
-          error: 'Failed to connect to backend',
+          error:
+            'Failed to connect to backend. Make sure the FastAPI server is running and BACKEND_URL is correct.',
           backendCandidates: candidates,
         },
         { status: 502 },
@@ -177,10 +200,16 @@ export async function POST(req: NextRequest) {
     }
 
     if (!response.ok) {
-        // Handle backend errors
-        const errorText = await response.text();
-        console.error('Backend error:', response.status, errorText);
-        return NextResponse.json({ error: `Backend error: ${response.status}` }, { status: response.status });
+      const errorText = await response.text();
+      const detail = parseBackendErrorMessage(errorText);
+      console.error('Backend error:', response.status, detail || errorText);
+      return NextResponse.json(
+        {
+          error: detail || `Backend error (${response.status}).`,
+          backendStatus: response.status,
+        },
+        { status: response.status },
+      );
     }
 
     // Proxy the JSON SSE stream directly to the client
@@ -194,6 +223,12 @@ export async function POST(req: NextRequest) {
 
   } catch (error) {
     console.error('Error in chat proxy:', error);
-    return NextResponse.json({ error: 'Failed to connect to backend' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Unknown error.';
+    return NextResponse.json(
+      {
+        error: `Chat request failed. ${message}`,
+      },
+      { status: 500 },
+    );
   }
 }

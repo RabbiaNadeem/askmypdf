@@ -4,6 +4,32 @@
   --background: #d8e0f0;
   --foreground: #0f1419;
 
+  --muted-foreground: rgba(15, 20, 25, 0.72);
+
+  --neu-bg: #d8e0f0;
+  --neu-shadow-dark: #b0bad0;
+  --neu-shadow-light: #ffffff;
+  --neu-accent: #2563eb;
+  --neu-accent-soft: #059669;
+}
+
+:root.dark {
+  --background: #020617;
+  --foreground: #e5e7eb;
+  --muted-foreground: rgba(229, 231, 235, 0.72);
+
+  --neu-bg: #0b1220;
+  --neu-shadow-dark: rgba(0, 0, 0, 0.65);
+  --neu-shadow-light: rgba(255, 255, 255, 0.06);
+  --neu-accent: #2563eb;
+  --neu-accent-soft: #059669;
+}
+
+:root.light {
+  --background: #d8e0f0;
+  --foreground: #0f1419;
+  --muted-foreground: rgba(15, 20, 25, 0.72);
+
   --neu-bg: #d8e0f0;
   --neu-shadow-dark: #b0bad0;
   --neu-shadow-light: #ffffff;
@@ -19,9 +45,17 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not(.light):not(.dark) {
     --background: #020617;
     --foreground: #e5e7eb;
+
+    --muted-foreground: rgba(229, 231, 235, 0.72);
+
+    --neu-bg: #0b1220;
+    --neu-shadow-dark: rgba(0, 0, 0, 0.65);
+    --neu-shadow-light: rgba(255, 255, 255, 0.06);
+    --neu-accent: #2563eb;
+    --neu-accent-soft: #059669;
   }
 }
 
@@ -37,11 +71,15 @@ body {
   background: radial-gradient(circle at top left, #f4f7fb 0, var(--neu-bg) 55%, #d9e2f0 100%);
 }
 
+.dark .neu-page {
+  background: radial-gradient(circle at top left, #0b1324 0, var(--neu-bg) 55%, #050b17 100%);
+}
+
 .neu-title {
   font-weight: 900;
   letter-spacing: 0.02em;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
-  color: #0f1419;
+  color: var(--foreground);
 }
 
 .neu-panel-inset {
@@ -75,7 +113,7 @@ body {
     -4px -4px 10px rgba(255, 255, 255, 0.95);
   font-size: 0.8rem;
   font-weight: 700;
-  color: #0f1419;
+  color: var(--foreground);
 }
 
 .neu-pill-dot {
@@ -94,7 +132,7 @@ body {
   border: none;
   cursor: pointer;
   background: var(--neu-bg);
-  color: #0f1419;
+  color: var(--foreground);
   box-shadow:
     7px 7px 18px var(--neu-shadow-dark),
     -6px -6px 18px var(--neu-shadow-light);
@@ -115,6 +153,14 @@ body {
   box-shadow:
     7px 7px 18px rgba(15, 23, 42, 0.35),
     -4px -4px 14px rgba(255, 255, 255, 0.92);
+}
+
+.neu-btn-danger {
+  background: linear-gradient(135deg, #dc2626 0, #b91c1c 100%);
+  color: #ffffff;
+  box-shadow:
+    7px 7px 18px rgba(15, 23, 42, 0.38),
+    -4px -4px 14px rgba(255, 255, 255, 0.9);
 }
 
 .neu-btn:hover:not(:disabled) {
@@ -147,6 +193,13 @@ body {
     -6px -6px 18px rgba(255, 255, 255, 0.97);
 }
 
+.dark .neu-header-bar {
+  background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.06) 0, var(--neu-bg) 60%, rgba(0, 0, 0, 0.35) 100%);
+  box-shadow:
+    7px 7px 20px rgba(0, 0, 0, 0.5),
+    -6px -6px 18px rgba(255, 255, 255, 0.04);
+}
+
 .neu-label-inset {
   padding: 0.25rem 0.8rem;
   border-radius: 999px;
@@ -155,7 +208,7 @@ body {
   box-shadow:
     inset 3px 3px 8px var(--neu-shadow-dark),
     inset -3px -3px 8px var(--neu-shadow-light);
-  color: #1f2937;
+  color: var(--foreground);
   font-weight: 600;
 }
 
@@ -169,13 +222,19 @@ body {
   font-weight: 500;
 }
 
+.dark .neu-chat-bubble-user {
+  box-shadow:
+    6px 6px 18px rgba(0, 0, 0, 0.6),
+    -4px -4px 12px rgba(255, 255, 255, 0.03);
+}
+
 .neu-chat-bubble-ai {
   border-radius: 20px;
   background: var(--neu-bg);
   box-shadow:
     inset 6px 6px 16px var(--neu-shadow-dark),
     inset -6px -6px 16px var(--neu-shadow-light);
-  color: #0f1419;
+  color: var(--foreground);
   font-weight: 500;
 }
 
@@ -191,12 +250,12 @@ body {
   border: none;
   outline: none;
   background: transparent;
-  color: #0f1419;
+  color: var(--foreground);
   font-weight: 500;
 }
 
 .neu-input-field::placeholder {
-  color: #6b7280;
+  color: var(--muted-foreground);
   font-weight: 400;
 }
 
@@ -236,6 +295,55 @@ body {
   cursor: default;
 }
 
+.dark .neu-send-btn {
+  background: radial-gradient(circle at 30% 20%, #1e293b 0, #334155 35%, #1d4ed8 100%);
+  box-shadow:
+    7px 7px 16px rgba(0, 0, 0, 0.6),
+    -6px -6px 14px rgba(255, 255, 255, 0.04);
+}
+
+.dark .neu-send-btn:active:not(:disabled) {
+  box-shadow:
+    inset 4px 4px 10px rgba(0, 0, 0, 0.6),
+    inset -4px -4px 10px rgba(255, 255, 255, 0.04);
+}
+
+/* Dark-mode: reduce white highlights / glow on neutral button-like elements
+   Don't override explicit primary/accent/danger variants so their colors remain visible. */
+.dark .neu-chip,
+.dark .neu-pill-raised,
+.dark .neu-btn:not(.neu-btn-primary):not(.neu-btn-accent):not(.neu-btn-danger) {
+  box-shadow:
+    6px 6px 16px rgba(0,0,0,0.65),
+    -4px -4px 10px rgba(255,255,255,0.03) !important;
+  background: linear-gradient(145deg, rgba(255,255,255,0.02), rgba(0,0,0,0.08));
+}
+
+/* Remove aggressive hover/drop-shadow glow in dark mode */
+.dark .neu-send-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: none;
+  box-shadow:
+    4px 4px 10px rgba(0,0,0,0.6),
+    -4px -4px 10px rgba(255,255,255,0.02);
+}
+
+.dark .neu-chip:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    3px 3px 8px rgba(0,0,0,0.6),
+    -3px -3px 8px rgba(255,255,255,0.02);
+}
+
+/* Ensure active/pressed states don't introduce bright white inset */
+.dark .neu-btn:active:not(:disabled),
+.dark .neu-chip:active,
+.dark .neu-send-btn:active:not(:disabled) {
+  box-shadow:
+    inset 4px 4px 10px rgba(0,0,0,0.6),
+    inset -4px -4px 10px rgba(255,255,255,0.02);
+}
+
 /* Scrollbar styling */
 
 .neu-scroll {
@@ -273,7 +381,7 @@ body {
     -5px -5px 14px var(--neu-shadow-light);
   cursor: pointer;
   border: none;
-  color: #0f1419;
+  color: var(--foreground);
   transition: box-shadow 150ms ease, transform 120ms ease, background 150ms ease;
 }
 
@@ -284,11 +392,47 @@ body {
     -3px -3px 8px var(--neu-shadow-light);
 }
 
+.neu-chip:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+  box-shadow:
+    5px 5px 14px var(--neu-shadow-dark),
+    -5px -5px 14px var(--neu-shadow-light);
+}
+
 .neu-chip:active {
   transform: translateY(1px);
   box-shadow:
     inset 3px 3px 8px var(--neu-shadow-dark),
     inset -3px -3px 8px var(--neu-shadow-light);
+}
+
+/* Typing indicator */
+
+.neu-thinking {
+  display: inline-flex;
+  align-items: center;
+}
+
+.neu-thinking-dots {
+  display: inline-flex;
+  gap: 0.18rem;
+}
+
+.neu-thinking-dots span {
+  display: inline-block;
+  transform: translateY(0);
+  opacity: 0.5;
+  animation: neu-thinking-bounce 900ms ease-in-out infinite;
+}
+
+.neu-thinking-dots span:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.neu-thinking-dots span:nth-child(3) {
+  animation-delay: 240ms;
 }
 
 /* Neumorphic loading skeleton */
@@ -357,5 +501,24 @@ body {
     box-shadow:
       inset 5px 5px 14px var(--neu-shadow-dark),
       inset -5px -5px 14px var(--neu-shadow-light);
+  }
+}
+
+@keyframes neu-thinking-bounce {
+  0% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  35% {
+    transform: translateY(-2px);
+    opacity: 0.8;
+  }
+  70% {
+    transform: translateY(0);
+    opacity: 0.55;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
   }
 }

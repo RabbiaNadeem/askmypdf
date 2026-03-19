@@ -35,6 +35,8 @@ npm install
 npm run dev
 ```
 
+If you prefer to run both the backend and frontend at once, open two shells (one for the Python venv/backend and one for Node.js/frontend) and run the commands in each.
+
 4. Open the app
 
 - Frontend: http://localhost:3000
@@ -53,6 +55,12 @@ npm run dev
 - `BACKEND_URL` (optional) — used by the Next.js proxy when the backend is not at the default `http://127.0.0.1:8000`.
 - `QDRANT_URL` — your Qdrant endpoint (Qdrant Cloud cluster URL or `http://localhost:6333`).
 - `QDRANT_API_KEY` (optional) — required for Qdrant Cloud.
+
+## UI features
+
+- Dark / Light theme toggle: a small theme button is pinned to the top-right of the app (client-only). It uses `next-themes` and toggles `.dark` / `.light` class on the document so CSS variables switch cleanly.
+- Clear chat: a "Clear chat" action is available in the chat header to reset the conversation.
+- Loading/typing indicator and skeletons appear while the AI response is streaming.
 
 ## Testing the API directly
 
@@ -86,6 +94,25 @@ curl -X POST -H "Content-Type: application/json" \
 
 - Don't commit large files (uploads). These folders are in `.gitignore`.
 - If chat/upload fails with connection errors, verify the backend is running and that `BACKEND_URL` (if set) is correct.
+
+### Files you likely changed
+
+If you followed the recent UI changes, the files you may want to review and commit are:
+
+- `app/globals.css` — theme + component styling
+- `app/page.tsx` — upload UI sizing + buttons
+- `app/chat/page.tsx` — chat UI, typing indicator, clear/reset
+- `app/layout.tsx` — theme provider mount
+- `components/mode-toggle.tsx` — theme toggle (new)
+- `components/theme-provider.tsx` — theme provider (new)
+- `app/api/chat/route.ts` — improved proxy error messages
+
+Stage and commit only the files you intend to add:
+
+```bash
+git add app/globals.css app/page.tsx app/chat/page.tsx app/layout.tsx components/mode-toggle.tsx components/theme-provider.tsx app/api/chat/route.ts
+git commit -m "UI: add theme toggle, clear/reset, typing indicator and styling fixes"
+```
 - If upload fails during ingestion, make sure `QDRANT_URL` points at a running Qdrant (local or Qdrant Cloud) and that `QDRANT_API_KEY` is set if required.
 - If chat returns 400 about a missing collection, re-upload a PDF first so you have a fresh `collection` id.
 

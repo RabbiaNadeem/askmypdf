@@ -122,8 +122,8 @@ export default function Home() {
     <div className="min-h-screen neu-page flex items-center justify-center px-4">
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-8 py-10">
         <header className="space-y-1 text-center">
-          <h1 className="neu-title text-4xl text-zinc-900">Ask My PDF</h1>
-          <p className="text-sm font-medium text-zinc-700">Upload a single PDF to unlock chat.</p>
+          <h1 className="neu-title text-4xl">Ask My PDF</h1>
+          <p className="text-sm font-medium opacity-80">Upload a single PDF to unlock chat.</p>
         </header>
 
         <div
@@ -163,10 +163,10 @@ export default function Home() {
           }}
         >
           <div className="flex flex-col items-center gap-4 text-center">
-            <div className="text-xs font-semibold tracking-[0.25em] uppercase text-zinc-600">
+            <div className="text-xs font-semibold tracking-[0.25em] uppercase opacity-70">
               Upload PDF
             </div>
-            <div className="text-base font-semibold text-zinc-900">{statusText}</div>
+            <div className="text-base font-semibold">{statusText}</div>
 
             {stage === 'uploading' && (
               <div className="w-full max-w-md">
@@ -180,7 +180,7 @@ export default function Home() {
             )}
 
             {stage === 'ready' && result?.filename && (
-              <div className="text-sm text-zinc-700">
+              <div className="text-sm opacity-80">
                 <span className="neu-pill-raised">
                   <span className="neu-pill-dot" aria-hidden="true" />
                   <span>Active PDF</span>
@@ -196,7 +196,7 @@ export default function Home() {
             <div className="mt-4 flex w-full max-w-md flex-col gap-3 sm:flex-row">
               <button
                 type="button"
-                className="neu-btn neu-btn-primary inline-flex h-10 items-center justify-center"
+                className="neu-btn neu-btn-primary inline-flex h-10 w-full items-center justify-center sm:w-auto sm:flex-1"
                 disabled={isBusy}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -209,10 +209,10 @@ export default function Home() {
               <Link
                 href="/chat"
                 className={
-                  "inline-flex h-10 items-center justify-center text-sm font-medium " +
+                  "inline-flex h-10 w-full items-center justify-center text-sm font-medium sm:w-auto sm:flex-1 " +
                   (canChat
-                    ? 'neu-btn neu-btn-accent'
-                    : 'pointer-events-none neu-btn neu-btn-accent opacity-60')
+                    ? 'neu-btn neu-btn-danger'
+                    : 'pointer-events-none neu-btn neu-btn-danger opacity-60')
                 }
                 aria-disabled={!canChat}
                 tabIndex={canChat ? 0 : -1}

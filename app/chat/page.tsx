@@ -59,13 +59,22 @@ function formatConfidence(score: number): string {
 }
 
 export default function ChatPage() {
-  const { messages, sendMessage, status } = useChat({
+  const {
+    messages,
+    sendMessage,
+    status,
+    setMessages,
+    error,
+    clearError,
+    stop,
+  } = useChat({
     transport: new DefaultChatTransport({ api: '/api/chat' }),
   });
 
   const isLoading = status === 'submitted' || status === 'streaming';
 
   const [input, setInput] = useState('');
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [uploadedFilename] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     return localStorage.getItem('askmypdf:lastUploaded');
@@ -82,6 +91,20 @@ export default function ChatPage() {
     { messageId: string; citationId: string } | null
   >(null);
 
+  const displayError = submitError ?? error?.message ?? null;
+
+  const clearErrors = () => {
+    setSubmitError(null);
+    clearError();
+  };
+
+  const handleClearChat = () => {
+    stop();
+    setMessages([]);
+    setOpenCitation(null);
+    clearErrors();
+  };
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!chatEnabled || isLoading) return;
@@ -89,15 +112,21 @@ export default function ChatPage() {
     const question = input.trim();
     if (!question) return;
 
+    clearErrors();
     setInput('');
-    await sendMessage(
-      { text: question },
-      {
-        body: {
-          collection: uploadedCollection,
+    try {
+      await sendMessage(
+        { text: question },
+        {
+          body: {
+            collection: uploadedCollection,
+          },
         },
-      },
-    );
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to send message.';
+      setSubmitError(message);
+    }
   }
 
   const getMessageText = (message: UIMessage) =>
@@ -112,14 +141,20 @@ export default function ChatPage() {
 
   const handleSuggestionClick = async (prompt: string) => {
     if (!chatEnabled || isLoading) return;
-    await sendMessage(
-      { text: prompt },
-      {
-        body: {
-          collection: uploadedCollection,
+    clearErrors();
+    try {
+      await sendMessage(
+        { text: prompt },
+        {
+          body: {
+            collection: uploadedCollection,
+          },
         },
-      },
-    );
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to send message.';
+      setSubmitError(message);
+    }
   };
 
   const getCitations = (message: UIMessage): Citation[] => {
@@ -134,35 +169,60 @@ export default function ChatPage() {
         <header className="mb-4">
           <div className="neu-header-bar flex items-center justify-between gap-4">
             <div className="space-y-0.5">
-              <h1 className="neu-title text-lg font-bold text-zinc-900">Ask My PDF</h1>
-              <p className="text-xs font-medium text-gray-600">
+              <h1 className="neu-title text-lg font-bold">Ask My PDF</h1>
+              <p className="text-xs font-medium opacity-75">
                 Ask questions, extract structure, and dig for details.
               </p>
             </div>
-            {uploadedFilename ? (
-              <div className="flex flex-col items-end gap-1 text-right">
-                <span className="text-[0.65rem] font-semibold tracking-[0.2em] uppercase text-gray-500">
-                  Active PDF
-                </span>
-                <span className="neu-label-inset max-w-[10rem] truncate" title={uploadedFilename}>
-                  {uploadedFilename}
-                </span>
-              </div>
-            ) : (
-              <div className="flex flex-col items-end text-right text-xs text-gray-600">
-                <span className="font-medium">Upload a PDF to start.</span>
-                <Link href="/" className="underline">
-                  Go to upload
-                </Link>
-              </div>
-            )}
+
+            <div className="flex flex-col items-end gap-2">
+              {uploadedFilename ? (
+                <div className="flex flex-col items-end gap-1 text-right">
+                  <span className="text-[0.65rem] font-semibold tracking-[0.2em] uppercase opacity-60">
+                    Active PDF
+                  </span>
+                  <span className="neu-label-inset max-w-[10rem] truncate" title={uploadedFilename}>
+                    {uploadedFilename}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-end text-right text-xs opacity-75">
+                  <span className="font-medium">Upload a PDF to start.</span>
+                  <Link href="/" className="underline">
+                    Go to upload
+                  </Link>
+                </div>
+              )}
+
+              <button
+                type="button"
+                className="neu-chip text-xs"
+                onClick={handleClearChat}
+                disabled={isLoading || messages.length === 0}
+                aria-disabled={isLoading || messages.length === 0}
+                title={messages.length === 0 ? 'No messages to clear.' : 'Clear the current chat.'}
+              >
+                Clear chat
+              </button>
+            </div>
           </div>
         </header>
 
         <div className="neu-scroll mb-4 flex-1 space-y-4 overflow-y-auto pr-1">
+        {displayError && (
+          <div className="neu-chat-bubble-ai p-3 text-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="text-sm font-semibold">Something went wrong</div>
+              <button type="button" className="neu-chip text-xs" onClick={clearErrors}>
+                Dismiss
+              </button>
+            </div>
+            <div className="mt-1 text-xs opacity-80 whitespace-pre-wrap">{displayError}</div>
+          </div>
+        )}
         {messages.length === 0 ? (
           <div className="mt-16 flex flex-col items-center gap-4 text-center">
-            <p className="text-sm font-medium text-gray-700">
+            <p className="text-sm font-medium opacity-80">
               {chatEnabled
                 ? 'Jump in with one of these prompts, or ask your own question.'
                 : 'Upload a PDF first to enable chat.'}
@@ -251,11 +311,11 @@ export default function ChatPage() {
                     const c = citations.find((x) => x.id === openCitation.citationId);
                     if (!c) return null;
                     return (
-                      <div className="mt-2 neu-chat-bubble-ai p-3 text-xs text-gray-800">
-                        <div className="font-semibold text-gray-900">
+                      <div className="mt-2 neu-chat-bubble-ai p-3 text-xs">
+                        <div className="font-semibold">
                           {c.filename} — page {c.page} (confidence {formatConfidence(c.score)})
                         </div>
-                        <div className="mt-1 text-gray-700">{c.snippet}</div>
+                        <div className="mt-1 opacity-80">{c.snippet}</div>
                       </div>
                     );
                   })()
@@ -269,6 +329,14 @@ export default function ChatPage() {
         {isLoading && messages[messages.length - 1]?.role === 'user' && (
             <div className="flex justify-start">
               <div className="neu-chat-bubble-ai max-w-[80%] p-3">
+                <div className="neu-thinking mb-2 text-xs font-semibold opacity-80" aria-live="polite">
+                  <span className="neu-thinking-dots" aria-hidden="true">
+                    <span>●</span>
+                    <span>●</span>
+                    <span>●</span>
+                  </span>
+                  <span className="ml-2">Thinking…</span>
+                </div>
                 <div className="neu-skeleton-row">
                   <div className="neu-skeleton-block" />
                   <div className="neu-skeleton-block" />
@@ -285,7 +353,11 @@ export default function ChatPage() {
             <input
               className="neu-input-field flex-1 text-sm font-medium"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                if (submitError) setSubmitError(null);
+                if (error) clearError();
+              }}
               placeholder={
                 chatEnabled
                   ? 'Ask a question about your PDF…'
