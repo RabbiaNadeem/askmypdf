@@ -6,8 +6,9 @@ langchain-community
 langchain-qdrant
 langchain-groq
 pymupdf
-chromadb
+qdrant-client
 huggingface-hub
 python-dotenv
 langchain-huggingface
 sentence-transformers
+pydantic-settings

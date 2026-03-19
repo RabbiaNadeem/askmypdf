@@ -1,89 +1,331 @@
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from __future__ import annotations
+
+import json
 import os
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma
-from langchain_groq import ChatGroq
+import re
+from typing import Any, Optional
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_groq import ChatGroq
+from pydantic import BaseModel
+
+from config import settings
+from services.retrieval import similarity_search_with_score
 
 
 router = APIRouter()
 
-CHROMA_PATH = "chroma_db"
-COLLECTION_NAME = "local_collection"
+_llm: Optional[ChatGroq] = None
 
-# 1. Initialize Embeddings (Must match ingest)
-embedding_function = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
-# 2. Initialize Vector Store
-# Note: We rely on the persistence directory existing. 
-# If it doesn't exist, this might create an empty one or throw a warning.
-db = Chroma(
-    persist_directory=CHROMA_PATH,
-    embedding_function=embedding_function,
-    collection_name=COLLECTION_NAME
-)
+def get_llm() -> ChatGroq:
+    global _llm
+    if _llm is None:
+        api_key = os.getenv("GROQ_API_KEY") or settings.GROQ_API_KEY
+        if not api_key:
+            raise HTTPException(
+                status_code=500,
+                detail="GROQ_API_KEY is not set. Set it in your environment or .env for the backend.",
+            )
+        _llm = ChatGroq(
+            temperature=0,
+            model_name=os.getenv("GROQ_MODEL") or settings.GROQ_MODEL,
+            api_key=api_key,
+        )
+    return _llm
 
-# 3. Initialize LLM
-# Using environment variable for model, defaulting to a solid Llama 3 option supported by Groq
-llm = ChatGroq(
-    temperature=0,
-    model_name=os.getenv("GROQ_MODEL", "llama3-70b-8192"),
-    api_key=os.getenv("GROQ_API_KEY")
-)
 
 class ChatRequest(BaseModel):
     question: str
+    collection: Optional[str] = None
+
+
+def _sse(payload: dict[str, Any]) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _clamp01(value: float) -> float:
+    try:
+        v = float(value)
+    except Exception:
+        return 0.0
+    if v < 0:
+        return 0.0
+    if v > 1:
+        return 1.0
+    return v
+
+
+def _make_citations(results: list[tuple[Any, float]]) -> list[dict[str, Any]]:
+    citations: list[dict[str, Any]] = []
+    for idx, (doc, score) in enumerate(results):
+        meta = getattr(doc, "metadata", {}) or {}
+        source_name = os.path.basename(str(meta.get("source") or meta.get("filename") or "unknown"))
+        page_num = int(meta.get("page", 0)) + 1
+        content = getattr(doc, "page_content", "") or ""
+        snippet = content.strip().replace("\n", " ")
+        if len(snippet) > 320:
+            snippet = snippet[:320].rstrip() + "…"
+
+        citations.append(
+            {
+                "id": f"c{idx + 1}",
+                "filename": source_name,
+                "page": page_num,
+                "score": _clamp01(score),
+                "snippet": snippet,
+            }
+        )
+    return citations
+
+
+def _page_key(doc: Any) -> tuple[str, int]:
+    meta = getattr(doc, "metadata", {}) or {}
+    source_name = os.path.basename(str(meta.get("source") or meta.get("filename") or "unknown"))
+    page_num = int(meta.get("page", 0)) + 1
+    return (source_name.lower(), page_num)
+
+
+def _dedupe_best_chunk_per_page(results: list[tuple[Any, float]]) -> list[tuple[Any, float]]:
+    """Keep only the best-scoring chunk per (filename,page)."""
+    best: dict[tuple[str, int], tuple[Any, float]] = {}
+    for doc, score in results:
+        key = _page_key(doc)
+        if key not in best or float(score) > float(best[key][1]):
+            best[key] = (doc, score)
+    deduped = list(best.values())
+    deduped.sort(key=lambda x: float(x[1]), reverse=True)
+    return deduped
+
+
+_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "can",
+    "could",
+    "do",
+    "does",
+    "for",
+    "from",
+    "how",
+    "i",
+    "in",
+    "is",
+    "it",
+    "me",
+    "mention",
+    "of",
+    "on",
+    "or",
+    "quote",
+    "the",
+    "this",
+    "to",
+    "what",
+    "where",
+    "which",
+    "why",
+    "with",
+    "you",
+    "your",
+
+    # Domain-generic terms that otherwise cause over-matching.
+    "learning",
+    "machine",
+    "model",
+    "models",
+    "pdf",
+    "document",
+    "documents",
+    "page",
+    "pages",
+    "type",
+    "types",
+    "definition",
+    "define",
+    "explain",
+}
+
+
+def _extract_keywords(question: str) -> list[str]:
+    """Extract simple topic keywords from the user's question.
+
+    Used only to decide whether retrieved context actually contains the topic;
+    if not, we suppress citations to avoid misleading references.
+    """
+    q = (question or "").strip().lower()
+    if not q:
+        return []
+
+    # Preserve common phrases that are strong signals.
+    strong_phrases = [
+        "gradient descent",
+        "supervised learning",
+        "unsupervised learning",
+        "reinforcement learning",
+    ]
+    phrases = [p for p in strong_phrases if p in q]
+
+    words = re.findall(r"[a-z0-9]+", q)
+    keywords = [w for w in words if len(w) >= 4 and w not in _STOPWORDS]
+
+    # De-dupe while preserving order.
+    seen: set[str] = set()
+    out: list[str] = []
+    for term in phrases + keywords:
+        if term in seen:
+            continue
+        seen.add(term)
+        out.append(term)
+    return out
+
+
+def _matches_keywords(text: str, keywords: list[str]) -> bool:
+    if not keywords:
+        return True
+    hay = (text or "").lower()
+    # If we have a phrase like "gradient descent", require it.
+    phrases = [k for k in keywords if " " in k]
+    if phrases:
+        # Prefer phrase match, but be resilient to PDF line breaks/hyphenation.
+        for phrase in phrases:
+            if phrase in hay:
+                return True
+            phrase_words = re.findall(r"[a-z0-9]+", phrase.lower())
+            if phrase_words:
+                pattern = r"\\b" + r"\\W+".join(map(re.escape, phrase_words)) + r"\\b"
+                if re.search(pattern, text or "", flags=re.IGNORECASE):
+                    return True
+
+        # If we can't find the contiguous phrase, fall back to keyword hits.
+        # This avoids suppressing relevant chunks where the phrase was split.
+        non_phrase = [k for k in keywords if " " not in k]
+        hits = sum(1 for k in non_phrase if k in hay)
+        return hits >= min(2, len(non_phrase)) if non_phrase else False
+    # Otherwise, require at least one keyword hit.
+    return any(k in hay for k in keywords)
+
+
+def _format_context(results: list[tuple[Any, float]]) -> str:
+    """Format context with explicit filename + page labels so the model can cite page numbers."""
+    parts: list[str] = []
+    for doc, _score in results:
+        meta = getattr(doc, "metadata", {}) or {}
+        source_name = os.path.basename(str(meta.get("source") or meta.get("filename") or "unknown"))
+        page_num = int(meta.get("page", 0)) + 1
+        content = getattr(doc, "page_content", "") or ""
+        content = content.strip()
+        if not content:
+            continue
+        parts.append(f"[{source_name} — page {page_num}]\n{content}")
+    return "\n\n---\n\n".join(parts)
+
 
 @router.post("/chat")
 async def chat(request: ChatRequest):
-    """
-    Chat with the uploaded PDFs.
-    """
-    if not request.question:
+    """Stream answer + citations via AI SDK UI-message JSON SSE."""
+    question = (request.question or "").strip()
+    if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
-    # 1. Retrieval
-    # k=4 chunks
-    results = db.similarity_search_with_score(request.question, k=4)
-    
-    if not results:
-        return {"answer": "I couldn't find any relevant information in the uploaded documents.", "sources": []}
+    collection = (request.collection or "").strip()
+    if not collection:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing collection. Upload a PDF first and pass its collection id.",
+        )
 
-    # 2. Context Construction
-    context_text = "\n\n---\n\n".join([doc.page_content for doc, _score in results])
-    
-    # 3. Prompting
-    prompt_template = ChatPromptTemplate.from_template("""
-    Answer the question based ONLY on the following context. 
-    If you cannot answer the question based on the context, say "I don't know based on the provided documents."
-    
-    Context:
-    {context}
-    
-    Question: 
-    {question}
-    """)
-    
-    prompt = prompt_template.format(context=context_text, question=request.question)
-    
-    # 4. Generation
-    try:
-        response = llm.invoke(prompt)
-        answer_text = response.content
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"LLM generation failed: {str(e)}")
-    
-    # 5. Source Formatting
-    sources = []
-    for doc, score in results:
-        sources.append({
-            "source": os.path.basename(doc.metadata.get("source", "unknown")),
-            "page": doc.metadata.get("page", 0) + 1, # +1 for human readable 1-based indexing
-            "score": float(score) 
-        })
+    raw_results = list(
+        similarity_search_with_score(
+            question,
+            collection_name=collection,
+            k=int(getattr(settings, "RAG_TOP_K", 6) or 6),
+        )
+    )
 
-    return {
-        "answer": answer_text,
-        "sources": sources
-    }
+    min_score = float(getattr(settings, "RAG_MIN_SCORE", 0.55) or 0.55)
+
+    # Basic score cutoff
+    scored_results = [(doc, score) for (doc, score) in raw_results if float(score) >= min_score]
+
+    # Topic gating: only keep chunks that actually mention the topic keywords.
+    # This prevents "fallback" answers from still showing unrelated citations.
+    keywords = _extract_keywords(question)
+    relevant_results = [
+        (doc, score)
+        for (doc, score) in scored_results
+        if _matches_keywords(getattr(doc, "page_content", "") or "", keywords)
+    ]
+
+    results = relevant_results
+
+    # Context for the LLM should not be limited by how many citations we *display*.
+    context_max = int(getattr(settings, "CONTEXT_MAX_CHUNKS", 6) or 6)
+    context_src = _dedupe_best_chunk_per_page(results)[: max(0, context_max)]
+    context_text = _format_context(context_src) if context_src else ""
+
+    # If nothing clears the threshold, treat context as irrelevant.
+    citations_min_score = float(getattr(settings, "CITATIONS_MIN_SCORE", min_score) or min_score)
+    citations_max = int(getattr(settings, "CITATIONS_MAX", 4) or 4)
+    citations_src = [(doc, score) for (doc, score) in results if float(score) >= citations_min_score]
+    citations_src = _dedupe_best_chunk_per_page(citations_src)
+    citations_src = citations_src[: max(0, citations_max)]
+
+    citations = _make_citations(citations_src) if citations_src else []
+
+    prompt_template = ChatPromptTemplate.from_template(
+        """
+You are "Ask My PDFs" — a helpful RAG assistant.
+
+Strict rules:
+1. If the question can be answered from the provided document context → Answer using ONLY the context and ALWAYS cite the exact page number(s).
+2. If the answer is NOT in the document context (or context is empty/irrelevant) → Start your answer with: "I don't have that specific information in the uploaded documents, but in general: " and give a short, accurate explanation.
+3. For meta questions (like "what do you do?") → Answer normally.
+4. Never make up page numbers or pretend something is in the PDF.
+
+Be honest, concise and helpful.
+
+Important:
+- If the Context is empty, you MUST follow rule 2 and you MUST NOT cite pages.
+- If the Context is not empty, you MUST answer ONLY from it and cite page numbers like (p.2).
+- If the Context mentions the topic but does not define it, say so explicitly (still citing the pages where it is mentioned).
+
+Context:
+{context}
+
+Question:
+{question}
+""".strip()
+    )
+    prompt = prompt_template.format(context=context_text, question=question)
+
+    async def generate():
+        # Envelope
+        yield _sse({"type": "start"})
+        yield _sse({"type": "start-step"})
+        yield _sse({"type": "text-start", "id": "text-1"})
+
+        # Citations data part
+        yield _sse({"type": "data-citations", "id": "citations-1", "data": citations})
+
+        # Answer text streaming
+        async for chunk in get_llm().astream(prompt):
+            text = getattr(chunk, "content", None)
+            if not text:
+                continue
+            yield _sse({"type": "text-delta", "id": "text-1", "delta": text})
+
+        yield _sse({"type": "text-end", "id": "text-1"})
+        yield _sse({"type": "finish-step"})
+        yield _sse({"type": "finish", "finishReason": "stop"})
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
