@@ -84,7 +84,7 @@ export default function Home() {
               localStorage.setItem('askmypdf:lastUploaded', json.filename);
             }
             if (json?.collection) {
-              localStorage.setItem('askmypdf:lastCollection', json.collection);
+              localStorage.setItem('askmypdf:lastDocId', String(json.doc_id));
             }
           } catch {
             setStage('error');
@@ -106,7 +106,21 @@ export default function Home() {
 
       xhr.send(form);
     });
+<<<<<<< HEAD
   }, []);
+=======
+  }, [refreshDocuments]);
+
+  useEffect(() => {
+    void refreshDocuments();
+  }, [refreshDocuments]);
+
+  const handleUseDocument = (doc: DocumentRow) => {
+    localStorage.setItem('askmypdf:lastUploaded', doc.filename);
+    localStorage.setItem('askmypdf:lastDocId', doc.doc_id);
+    router.push('/chat');
+  };
+>>>>>>> 45a8812 (feature: supabase storage and sidebar)
 
   const onFiles = useCallback(
     (files: FileList | null) => {

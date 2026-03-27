@@ -173,7 +173,13 @@ export async function POST(req: NextRequest) {
             },
             body: JSON.stringify({
               question,
+<<<<<<< HEAD
               collection,
+=======
+              doc_ids: collections,
+              active_doc_id: activeDocId || undefined,
+                session_id: body?.session_id,
+>>>>>>> 45a8812 (feature: supabase storage and sidebar)
             }),
           });
           lastError = null;

@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
 from pydantic import BaseModel
+from supabase import create_client
 
 from config import settings
 from services.retrieval import similarity_search_with_score
@@ -39,7 +40,50 @@ def get_llm() -> ChatGroq:
 
 class ChatRequest(BaseModel):
     question: str
+<<<<<<< HEAD
     collection: Optional[str] = None
+=======
+    doc_ids: list[str] = []
+    active_doc_id: str | None = None
+    session_id: str | None = None
+
+def _resolve_collections_from_docs(request: ChatRequest) -> list[str]:
+    """Resolves doc_ids to qdrant collection names via Supabase"""
+    doc_ids = request.doc_ids
+    active_doc_id = request.active_doc_id
+    
+    if not doc_ids:
+        return []
+
+    url = getattr(settings, "SUPABASE_URL", "") or os.getenv("SUPABASE_URL", "")
+    key = getattr(settings, "SUPABASE_ANON_KEY", "") or os.getenv("SUPABASE_ANON_KEY", "")
+    if not url or not key:
+        return []
+    
+    try:
+        supabase = create_client(url, key)
+        res = supabase.table("documents").select("doc_id", "collection").in_("doc_id", doc_ids).execute()
+        rows = res.data or []
+    except Exception as e:
+        print(f"Error resolving docs: {e}")
+        return []
+        
+    doc_map = {row['doc_id']: row['collection'] for row in rows}
+    
+    out = []
+    active_col = None
+    if active_doc_id and doc_map.get(active_doc_id):
+        active_col = doc_map[active_doc_id]
+        out.append(active_col)
+        
+    for d in doc_ids:
+        c = doc_map.get(d)
+        if c and c != active_col and c not in out:
+            out.append(c)
+            
+    max_cols = int(getattr(settings, "MAX_MULTI_COLLECTIONS", 5) or 5)
+    return out[:max_cols]
+>>>>>>> 45a8812 (feature: supabase storage and sidebar)
 
 
 def _sse(payload: dict[str, Any]) -> str:
@@ -236,8 +280,13 @@ async def chat(request: ChatRequest):
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
+<<<<<<< HEAD
     collection = (request.collection or "").strip()
     if not collection:
+=======
+    collections = _resolve_collections_from_docs(request)
+    if not collections:
+>>>>>>> 45a8812 (feature: supabase storage and sidebar)
         raise HTTPException(
             status_code=400,
             detail="Missing collection. Upload a PDF first and pass its collection id.",
@@ -308,6 +357,15 @@ Question:
     prompt = prompt_template.format(context=context_text, question=question)
 
     async def generate():
+        url = getattr(settings, "SUPABASE_URL", "") or os.getenv("SUPABASE_URL", "")
+        key = getattr(settings, "SUPABASE_ANON_KEY", "") or os.getenv("SUPABASE_ANON_KEY", "")
+        supabase = None
+        if url and key:
+            try:
+                supabase = create_client(url, key)
+            except Exception:
+                pass
+                
         # Envelope
         yield _sse({"type": "start"})
         yield _sse({"type": "start-step"})
@@ -316,16 +374,59 @@ Question:
         # Citations data part
         yield _sse({"type": "data-citations", "id": "citations-1", "data": citations})
 
+        full_answer = ""
         # Answer text streaming
         async for chunk in get_llm().astream(prompt):
-            text = getattr(chunk, "content", None)
-            if not text:
+            text_chunk = getattr(chunk, "content", None)
+            if not text_chunk:
                 continue
-            yield _sse({"type": "text-delta", "id": "text-1", "delta": text})
+            full_answer += text_chunk
+            yield _sse({"type": "text-delta", "id": "text-1", "delta": text_chunk})
 
         yield _sse({"type": "text-end", "id": "text-1"})
         yield _sse({"type": "finish-step"})
         yield _sse({"type": "finish", "finishReason": "stop"})
 
+        # Save messages to db
+        if supabase:
+            try:
+                session_id = request.session_id or "default"
+                supabase.table("messages").insert([
+                    {"session_id": session_id, "role": "user", "content": question},
+                    {"session_id": session_id, "role": "assistant", "content": full_answer}
+                ]).execute()
+            except Exception as e:
+                print(f"Error saving to generic messages table: {e}")
+        
+
+
+        
+
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+
+@router.get("/chat/{session_id}")
+async def get_chat_history(session_id: str):
+    url = getattr(settings, "SUPABASE_URL", "") or os.getenv("SUPABASE_URL", "")
+    key = getattr(settings, "SUPABASE_ANON_KEY", "") or os.getenv("SUPABASE_ANON_KEY", "")
+    if not url or not key:
+        return {"messages": []}
+    
+    try:
+        supabase = create_client(url, key)
+        res = supabase.table("messages").select("id", "role", "content", "created_at").eq("session_id", session_id).order("created_at").execute()
+        
+        formatted_messages = []
+        for row in (res.data or []):
+            formatted_messages.append({
+                "id": str(row["id"]),
+                "role": row["role"],
+                "content": row["content"]
+            })
+            
+        return {"messages": formatted_messages}
+    except Exception as e:
+        print(f"Error fetching history: {e}")
+        return {"messages": []}
 

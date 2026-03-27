@@ -59,6 +59,16 @@ function formatConfidence(score: number): string {
 }
 
 export default function ChatPage() {
+  const [sessionId] = useState(() => {
+    if (typeof window === 'undefined') return crypto.randomUUID();
+    let sid = localStorage.getItem('askmypdf:sessionId');
+    if (!sid) {
+      sid = crypto.randomUUID();
+      localStorage.setItem('askmypdf:sessionId', sid);
+    }
+
+    return sid;
+  });
   const {
     messages,
     sendMessage,
@@ -71,6 +81,21 @@ export default function ChatPage() {
     transport: new DefaultChatTransport({ api: '/api/chat' }),
   });
 
+
+
+  useEffect(() => {
+    if (!sessionId) return;
+    fetch(`/api/chat/history?sessionId=${sessionId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
+          setMessages(data.messages);
+        }
+      })
+      .catch(err => console.error("Failed to load history:", err));
+  }, [sessionId, setMessages]);
+
+
   const isLoading = status === 'submitted' || status === 'streaming';
 
   const [input, setInput] = useState('');
@@ -81,7 +106,7 @@ export default function ChatPage() {
   });
   const [uploadedCollection] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
-    return localStorage.getItem('askmypdf:lastCollection');
+    return localStorage.getItem('askmypdf:lastDocId');
   });
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -96,6 +121,28 @@ export default function ChatPage() {
   const clearErrors = () => {
     setSubmitError(null);
     clearError();
+  };
+
+  const handleDeleteDocument = async (doc: DocumentRow) => {
+    if (!confirm(`Are you sure you want to delete "${doc.filename}"?`)) return;
+    setDeletingId(doc.doc_id);
+    try {
+      const res = await fetch(`/api/documents/${doc.doc_id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        throw new Error('Failed to delete document');
+      }
+      
+      setDocuments((prev) => prev.filter((d) => d.doc_id !== doc.doc_id));
+      
+      setSelectedDocIds((prev) => prev.filter((c) => c !== doc.doc_id));
+      if (activeDocId === doc.doc_id) setActiveDocId(null);
+      if (uploadedDocId === doc.doc_id) setUploadedDocId(null);
+      
+    } catch (e) {
+      setDocsError(e instanceof Error ? e.message : 'Error deleting document');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const handleClearChat = () => {
