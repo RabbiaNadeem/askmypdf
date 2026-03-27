@@ -6,7 +6,7 @@ from langchain_qdrant import QdrantVectorStore
 from config import settings
 from services.retrieval import get_embeddings, make_collection_name
 
-def ingest_pdf(file_path: str):
+def ingest_pdf(file_path: str, *, doc_id: str | None = None):
     """
     Ingests a PDF file into Qdrant.
     Collections are scoped per document.
@@ -22,7 +22,7 @@ def ingest_pdf(file_path: str):
     
     if not documents:
         filename = os.path.basename(file_path)
-        return 0, make_collection_name(filename)
+        return 0, make_collection_name(filename, doc_id=doc_id)
     
     # 2. Split Text (RecursiveCharacterTextSplitter)
     text_splitter = RecursiveCharacterTextSplitter(
@@ -35,11 +35,11 @@ def ingest_pdf(file_path: str):
     
     if not chunks:
         filename = os.path.basename(file_path)
-        return 0, make_collection_name(filename)
+        return 0, make_collection_name(filename, doc_id=doc_id)
 
     # 3. Qdrant collection per document
     filename = os.path.basename(file_path)
-    collection_name = make_collection_name(filename)
+    collection_name = make_collection_name(filename, doc_id=doc_id)
 
     # 4. Store in Qdrant
     # NOTE: langchain-qdrant 1.1.x expects url/api_key (not a pre-built client) for this helper.
