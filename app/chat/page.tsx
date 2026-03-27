@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
 import { DefaultChatTransport } from 'ai';
 import { useChat } from '@ai-sdk/react';
@@ -12,6 +12,15 @@ type Citation = {
   page: number;
   score: number;
   snippet: string;
+};
+
+type DocumentRow = {
+  doc_id: string;
+  filename: string;
+  url?: string | null;
+  collection: string;
+  chunks?: number | null;
+  created_at?: string;
 };
 
 type CitationsPart = {
@@ -98,25 +107,166 @@ export default function ChatPage() {
 
   const isLoading = status === 'submitted' || status === 'streaming';
 
+  const [documents, setDocuments] = useState<DocumentRow[]>([]);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [docsError, setDocsError] = useState<string | null>(null);
+
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+
   const [input, setInput] = useState('');
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [uploadedFilename] = useState<string | null>(() => {
+  const [uploadedFilename, setUploadedFilename] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     return localStorage.getItem('askmypdf:lastUploaded');
   });
-  const [uploadedCollection] = useState<string | null>(() => {
+  const [uploadedCollection, setUploadedCollection] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     return localStorage.getItem('askmypdf:lastDocId');
   });
+
+  const [activeCollection, setActiveCollection] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return (
+      localStorage.getItem('askmypdf:activeCollection') ||
+      localStorage.getItem('askmypdf:lastCollection')
+    );
+  });
+
+  const [selectedCollections, setSelectedCollections] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+
+    const raw = localStorage.getItem('askmypdf:selectedCollections');
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (Array.isArray(parsed)) {
+          return parsed
+            .filter((x): x is string => typeof x === 'string')
+            .map((x) => x.trim())
+            .filter(Boolean)
+            .slice(0, 5);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const fallback = localStorage.getItem('askmypdf:lastCollection');
+    return fallback ? [fallback] : [];
+  });
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  const chatEnabled = !!uploadedFilename && !!uploadedCollection;
+  const chatEnabled = selectedCollections.length > 0;
+
+  const activeDoc = useMemo(() => {
+    const col = activeCollection || uploadedCollection;
+    if (!col) return null;
+    return documents.find((d) => d.collection === col) ?? null;
+  }, [activeCollection, documents, uploadedCollection]);
+
+  const activeLabel = useMemo(() => {
+    if (activeDoc?.filename) return activeDoc.filename;
+    if (uploadedFilename) return uploadedFilename;
+    return null;
+  }, [activeDoc?.filename, uploadedFilename]);
 
   const [openCitation, setOpenCitation] = useState<
     { messageId: string; citationId: string } | null
   >(null);
 
   const displayError = submitError ?? error?.message ?? null;
+
+  const refreshDocuments = useCallback(async () => {
+    setDocsLoading(true);
+    setDocsError(null);
+    try {
+      const res = await fetch('/api/documents?limit=50', { cache: 'no-store' });
+      const text = await res.text();
+      if (!res.ok) {
+        try {
+          const json = JSON.parse(text) as { error?: string; detail?: string };
+          throw new Error(json.detail || json.error || `Failed to load documents (${res.status}).`);
+        } catch {
+          throw new Error(`Failed to load documents (${res.status}).`);
+        }
+      }
+      const json = JSON.parse(text) as { documents?: DocumentRow[] };
+      setDocuments(Array.isArray(json.documents) ? json.documents : []);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed to load documents.';
+      setDocsError(message);
+    } finally {
+      setDocsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshDocuments();
+  }, [refreshDocuments]);
+
+  useEffect(() => {
+    // Keep selection sane across reloads.
+    if (selectedCollections.length > 0) {
+      localStorage.setItem('askmypdf:selectedCollections', JSON.stringify(selectedCollections));
+    } else {
+      localStorage.removeItem('askmypdf:selectedCollections');
+    }
+  }, [selectedCollections]);
+
+  useEffect(() => {
+    if (activeCollection) {
+      localStorage.setItem('askmypdf:activeCollection', activeCollection);
+      localStorage.setItem('askmypdf:lastCollection', activeCollection);
+      setUploadedCollection(activeCollection);
+    }
+  }, [activeCollection]);
+
+  useEffect(() => {
+    if (activeDoc?.filename) {
+      localStorage.setItem('askmypdf:lastUploaded', activeDoc.filename);
+      setUploadedFilename(activeDoc.filename);
+    }
+  }, [activeDoc?.filename]);
+
+  const toggleCollection = (collection: string) => {
+    const col = (collection || '').trim();
+    if (!col) return;
+
+    setSelectionError(null);
+    
+    // Check if this collection is currently selected
+    const isCurrentlySelected = selectedCollections.includes(col);
+    
+    if (isCurrentlySelected) {
+      // Removing from selection
+      setSelectedCollections((prev) => prev.filter((x) => x !== col));
+    } else {
+      // Adding to selection
+      if (selectedCollections.length >= 5) {
+        setSelectionError('Select up to 5 PDFs.');
+        return;
+      }
+      setSelectedCollections((prev) => [...prev, col]);
+      // Make it active immediately when checked
+      setActiveCollection(col);
+    }
+  };
+
+  const setActiveFromDoc = (doc: DocumentRow) => {
+    setActiveCollection(doc.collection);
+    setSelectionError(null);
+    setSelectedCollections((prev) => {
+      const col = doc.collection;
+      const alreadySelected = prev.includes(col);
+      if (!alreadySelected && prev.length >= 5) {
+        setSelectionError('Select up to 5 PDFs. Deselect one to switch.');
+        return prev;
+      }
+
+      const next = [col, ...prev.filter((x) => x !== col)];
+      return next.slice(0, 5);
+    });
+  };
 
   const clearErrors = () => {
     setSubmitError(null);
@@ -166,7 +316,8 @@ export default function ChatPage() {
         { text: question },
         {
           body: {
-            collection: uploadedCollection,
+            collections: selectedCollections,
+            activeCollection: activeCollection ?? undefined,
           },
         },
       );
@@ -194,7 +345,8 @@ export default function ChatPage() {
         { text: prompt },
         {
           body: {
-            collection: uploadedCollection,
+            collections: selectedCollections,
+            activeCollection: activeCollection ?? undefined,
           },
         },
       );
@@ -212,7 +364,7 @@ export default function ChatPage() {
 
   return (
     <div className="neu-page flex h-screen flex-col px-4">
-      <div className="mx-auto flex h-full w-full max-w-2xl flex-col py-4">
+      <div className="mx-auto flex h-full w-full max-w-5xl flex-col py-4">
         <header className="mb-4">
           <div className="neu-header-bar flex items-center justify-between gap-4">
             <div className="space-y-0.5">
@@ -223,14 +375,19 @@ export default function ChatPage() {
             </div>
 
             <div className="flex flex-col items-end gap-2">
-              {uploadedFilename ? (
+              {activeLabel ? (
                 <div className="flex flex-col items-end gap-1 text-right">
                   <span className="text-[0.65rem] font-semibold tracking-[0.2em] uppercase opacity-60">
                     Active PDF
                   </span>
-                  <span className="neu-label-inset max-w-[10rem] truncate" title={uploadedFilename}>
-                    {uploadedFilename}
+                  <span className="neu-label-inset max-w-[12rem] truncate" title={activeLabel}>
+                    {activeLabel}
                   </span>
+                  {selectedCollections.length > 1 && (
+                    <span className="text-[0.7rem] font-semibold opacity-70">
+                      +{selectedCollections.length - 1} more selected
+                    </span>
+                  )}
                 </div>
               ) : (
                 <div className="flex flex-col items-end text-right text-xs opacity-75">
@@ -255,7 +412,97 @@ export default function ChatPage() {
           </div>
         </header>
 
-        <div className="neu-scroll mb-4 flex-1 space-y-4 overflow-y-auto pr-1">
+        <div className="flex h-full min-h-0 flex-1 flex-col gap-4 md:flex-row">
+          <aside className="w-full md:w-[22rem] md:flex-shrink-0">
+            <div className="neu-panel-inset h-full p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold tracking-[0.2em] uppercase opacity-70">
+                    PDFs
+                  </div>
+                  <div className="mt-1 text-xs font-medium opacity-75">
+                    Select up to 5 to chat across.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="neu-chip text-xs"
+                  onClick={() => void refreshDocuments()}
+                  disabled={docsLoading}
+                  aria-disabled={docsLoading}
+                  title="Refresh list"
+                >
+                  Refresh
+                </button>
+              </div>
+
+              {docsError && <div className="mt-3 text-sm text-red-600">{docsError}</div>}
+              {selectionError && <div className="mt-2 text-xs text-red-600">{selectionError}</div>}
+
+              <div className="neu-scroll mt-4 max-h-[40vh] space-y-2 overflow-y-auto pr-1 md:max-h-[calc(100vh-12rem)]">
+                {docsLoading ? (
+                  <div className="text-sm opacity-70">Loading…</div>
+                ) : documents.length === 0 ? (
+                  <div className="text-sm opacity-70">No documents yet. Upload PDFs first.</div>
+                ) : (
+                  documents.map((doc) => {
+                    const selected = selectedCollections.includes(doc.collection);
+                    const isActive = (activeCollection || uploadedCollection) === doc.collection;
+
+                    return (
+                      <div
+                        key={doc.doc_id}
+                        className={
+                          'neu-chat-bubble-ai flex items-center justify-between gap-3 p-3 ' +
+                          (isActive ? ' ring-2 ring-zinc-900/10 dark:ring-white/10' : '')
+                        }
+                      >
+                        <button
+                          type="button"
+                          className="min-w-0 flex-1 text-left"
+                          onClick={() => setActiveFromDoc(doc)}
+                          title="Set active document"
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={() => toggleCollection(doc.collection)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="h-4 w-4"
+                              aria-label={`Select ${doc.filename}`}
+                            />
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-semibold">{doc.filename}</div>
+                              <div className="text-xs opacity-70">
+                                {typeof doc.chunks === 'number' ? `${doc.chunks} chunks` : 'Ready'}
+                                {isActive ? ' · Active' : ''}
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+
+                        {doc.url ? (
+                          <a
+                            className="neu-chip text-xs"
+                            href={doc.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Open PDF"
+                          >
+                            Open
+                          </a>
+                        ) : null}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </aside>
+
+          <section className="flex min-h-0 flex-1 flex-col">
+            <div className="neu-scroll mb-4 flex-1 space-y-4 overflow-y-auto pr-1">
         {displayError && (
           <div className="neu-chat-bubble-ai p-3 text-sm">
             <div className="flex items-start justify-between gap-3">
@@ -393,7 +640,7 @@ export default function ChatPage() {
             </div>
         )}
         <div ref={bottomRef} />
-        </div>
+            </div>
 
         <form onSubmit={onSubmit} className="mt-1">
           <div className="neu-input-well flex items-center gap-3 px-4 py-3">
@@ -407,8 +654,10 @@ export default function ChatPage() {
               }}
               placeholder={
                 chatEnabled
-                  ? 'Ask a question about your PDF…'
-                  : 'Upload a PDF (and ingest) to start chatting…'
+                  ? selectedCollections.length > 1
+                    ? 'Ask a question across your selected PDFs…'
+                    : 'Ask a question about your PDF…'
+                  : 'Select at least one PDF to start chatting…'
               }
               disabled={!chatEnabled || isLoading}
             />
@@ -425,6 +674,8 @@ export default function ChatPage() {
             </button>
           </div>
         </form>
+          </section>
+        </div>
       </div>
     </div>
   );

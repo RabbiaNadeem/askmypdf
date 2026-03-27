@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -40,6 +40,7 @@ def get_llm() -> ChatGroq:
 
 class ChatRequest(BaseModel):
     question: str
+<<<<<<< HEAD
 <<<<<<< HEAD
     collection: Optional[str] = None
 =======
@@ -84,6 +85,50 @@ def _resolve_collections_from_docs(request: ChatRequest) -> list[str]:
     max_cols = int(getattr(settings, "MAX_MULTI_COLLECTIONS", 5) or 5)
     return out[:max_cols]
 >>>>>>> 45a8812 (feature: supabase storage and sidebar)
+=======
+    # Back-compat: client used to send a single collection string.
+    # Multi-doc: allow a list of collection ids.
+    collection: Optional[Union[str, list[str]]] = None
+    # Alias field (some clients may send `collections`).
+    collections: Optional[list[str]] = None
+    # Optional hint for the UI's currently active document.
+    activeCollection: Optional[str] = None
+
+
+def _normalize_collections(request: ChatRequest) -> list[str]:
+    cols: list[str] = []
+
+    active = (request.activeCollection or "").strip() if isinstance(request.activeCollection, str) else ""
+
+    if isinstance(request.collections, list):
+        cols.extend([c for c in request.collections if isinstance(c, str)])
+
+    if isinstance(request.collection, list):
+        cols.extend([c for c in request.collection if isinstance(c, str)])
+    elif isinstance(request.collection, str):
+        cols.append(request.collection)
+
+    # sanitize + de-dupe while preserving order
+    out: list[str] = []
+    seen: set[str] = set()
+    for c in cols:
+        c = (c or "").strip()
+        if not c or c in seen:
+            continue
+        seen.add(c)
+        out.append(c)
+
+    if active:
+        if active in out:
+            out = [active] + [c for c in out if c != active]
+        else:
+            out = [active] + out
+
+    max_cols = int(getattr(settings, "MAX_MULTI_COLLECTIONS", 5) or 5)
+    if max_cols < 1:
+        max_cols = 1
+    return out[:max_cols]
+>>>>>>> origin/main
 
 
 def _sse(payload: dict[str, Any]) -> str:
@@ -281,24 +326,50 @@ async def chat(request: ChatRequest):
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     collection = (request.collection or "").strip()
     if not collection:
 =======
     collections = _resolve_collections_from_docs(request)
     if not collections:
 >>>>>>> 45a8812 (feature: supabase storage and sidebar)
+=======
+    collections = _normalize_collections(request)
+    if not collections:
+>>>>>>> origin/main
         raise HTTPException(
             status_code=400,
-            detail="Missing collection. Upload a PDF first and pass its collection id.",
+            detail="Missing collection(s). Upload a PDF first and pass its collection id(s).",
         )
 
-    raw_results = list(
-        similarity_search_with_score(
-            question,
-            collection_name=collection,
-            k=int(getattr(settings, "RAG_TOP_K", 6) or 6),
-        )
-    )
+    top_k = int(getattr(settings, "RAG_TOP_K", 6) or 6)
+
+    raw_results: list[tuple[Any, float]] = []
+    failures: list[str] = []
+    for collection in collections:
+        try:
+            raw_results.extend(
+                list(
+                    similarity_search_with_score(
+                        question,
+                        collection_name=collection,
+                        k=top_k,
+                    )
+                )
+            )
+        except Exception:
+            failures.append(collection)
+            continue
+
+    if not raw_results:
+        # If all collections failed, surface an actionable error.
+        if failures and len(failures) == len(collections):
+            raise HTTPException(
+                status_code=502,
+                detail="Failed to query vector store for the provided collection(s).",
+            )
+
+        # Otherwise proceed with empty context (the prompt handles this).
 
     min_score = float(getattr(settings, "RAG_MIN_SCORE", 0.55) or 0.55)
 

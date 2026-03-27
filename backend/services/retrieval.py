@@ -16,12 +16,17 @@ from config import settings
 _COLLECTION_SAFE = re.compile(r"[^a-zA-Z0-9_]+")
 
 
-def make_collection_name(filename: str) -> str:
-	"""Deterministic, Qdrant-safe collection name for a given filename."""
+
+def make_collection_name(filename: str, doc_id: str | None = None) -> str:
+	"""Deterministic, Qdrant-safe collection name.
+
+	If doc_id is provided, it is incorporated so identical filenames do not collide.
+	"""
 	base = filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
 	stem = base.rsplit(".", 1)[0] if "." in base else base
 	stem = _COLLECTION_SAFE.sub("_", stem).strip("_")
-	digest = hashlib.sha1(base.encode("utf-8")).hexdigest()[:10]
+	digest_source = f"{doc_id}::{base}" if doc_id else base
+	digest = hashlib.sha1(digest_source.encode("utf-8")).hexdigest()[:10]
 	return f"{settings.QDRANT_COLLECTION_PREFIX}{stem}_{digest}".lower()
 
 

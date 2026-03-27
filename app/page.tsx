@@ -1,15 +1,27 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 type UploadStage = 'idle' | 'uploading' | 'ingesting' | 'ready' | 'error';
 
 type UploadSuccess = {
+  doc_id?: string;
   filename: string;
+  url?: string | null;
   message?: string;
   chunks?: number;
   collection?: string;
+};
+
+type DocumentRow = {
+  doc_id: string;
+  filename: string;
+  url?: string | null;
+  collection: string;
+  chunks?: number | null;
+  created_at?: string;
 };
 
 function formatPercent(value: number) {
@@ -18,12 +30,41 @@ function formatPercent(value: number) {
 
 export default function Home() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const router = useRouter();
 
   const [dragActive, setDragActive] = useState(false);
   const [stage, setStage] = useState<UploadStage>('idle');
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UploadSuccess | null>(null);
+
+  const [recentDocs, setRecentDocs] = useState<DocumentRow[]>([]);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [docsError, setDocsError] = useState<string | null>(null);
+
+  const refreshDocuments = useCallback(async () => {
+    setDocsLoading(true);
+    setDocsError(null);
+    try {
+      const res = await fetch('/api/documents?limit=20', { cache: 'no-store' });
+      const text = await res.text();
+      if (!res.ok) {
+        try {
+          const json = JSON.parse(text) as { error?: string; detail?: string };
+          throw new Error(json.detail || json.error || `Failed to load documents (${res.status}).`);
+        } catch {
+          throw new Error(`Failed to load documents (${res.status}).`);
+        }
+      }
+      const json = JSON.parse(text) as { documents?: DocumentRow[] };
+      setRecentDocs(Array.isArray(json.documents) ? json.documents : []);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed to load documents.';
+      setDocsError(message);
+    } finally {
+      setDocsLoading(false);
+    }
+  }, []);
 
   const isBusy = stage === 'uploading' || stage === 'ingesting';
   const canChat = stage === 'ready' && !!result?.filename;
@@ -86,6 +127,7 @@ export default function Home() {
             if (json?.collection) {
               localStorage.setItem('askmypdf:lastDocId', String(json.doc_id));
             }
+            void refreshDocuments();
           } catch {
             setStage('error');
             setError('Upload succeeded but response was invalid.');
@@ -107,8 +149,11 @@ export default function Home() {
       xhr.send(form);
     });
 <<<<<<< HEAD
+<<<<<<< HEAD
   }, []);
 =======
+=======
+>>>>>>> origin/main
   }, [refreshDocuments]);
 
   useEffect(() => {
@@ -117,15 +162,28 @@ export default function Home() {
 
   const handleUseDocument = (doc: DocumentRow) => {
     localStorage.setItem('askmypdf:lastUploaded', doc.filename);
+<<<<<<< HEAD
     localStorage.setItem('askmypdf:lastDocId', doc.doc_id);
     router.push('/chat');
   };
 >>>>>>> 45a8812 (feature: supabase storage and sidebar)
+=======
+    localStorage.setItem('askmypdf:lastCollection', doc.collection);
+    router.push('/chat');
+  };
+>>>>>>> origin/main
 
   const onFiles = useCallback(
     (files: FileList | null) => {
       if (!files || files.length === 0) return;
-      void startUpload(files[0]);
+      const list = Array.from(files).slice(0, 5);
+      void (async () => {
+        for (const file of list) {
+          // Upload sequentially to keep ingestion predictable.
+          // eslint-disable-next-line no-await-in-loop
+          await startUpload(file);
+        }
+      })();
     },
     [startUpload],
   );
@@ -137,7 +195,7 @@ export default function Home() {
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-8 py-10">
         <header className="space-y-1 text-center">
           <h1 className="neu-title text-4xl">Ask My PDF</h1>
-          <p className="text-sm font-medium opacity-80">Upload a single PDF to unlock chat.</p>
+          <p className="text-sm font-medium opacity-80">Upload up to 5 PDFs to unlock multi-document chat.</p>
         </header>
 
         <div
@@ -240,12 +298,77 @@ export default function Home() {
               ref={fileInputRef}
               type="file"
               accept="application/pdf"
+              multiple
               className="hidden"
               onChange={(e) => onFiles(e.target.files)}
               disabled={isBusy}
             />
           </div>
         </div>
+
+        <section className="neu-panel-inset p-6 sm:p-8">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold tracking-[0.15em] uppercase opacity-70">
+              Recent documents
+            </h2>
+            <button
+              type="button"
+              className="neu-chip text-xs"
+              onClick={() => void refreshDocuments()}
+              disabled={docsLoading}
+              aria-disabled={docsLoading}
+              title="Refresh list"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {docsError && <div className="mt-3 text-sm text-red-600">{docsError}</div>}
+
+          {docsLoading ? (
+            <div className="mt-4 text-sm opacity-70">Loading…</div>
+          ) : recentDocs.length === 0 ? (
+            <div className="mt-4 text-sm opacity-70">No documents yet. Upload one above.</div>
+          ) : (
+            <div className="mt-4 space-y-2">
+              {recentDocs.map((doc) => (
+                <div
+                  key={doc.doc_id}
+                  className="neu-chat-bubble-ai flex items-center justify-between gap-3 p-3"
+                >
+                  <div className="min-w-0 text-left">
+                    <div className="truncate text-sm font-semibold">{doc.filename}</div>
+                    <div className="text-xs opacity-70">
+                      {typeof doc.chunks === 'number' ? `${doc.chunks} chunks` : 'Ready'}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {doc.url ? (
+                      <a
+                        className="neu-chip text-xs"
+                        href={doc.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Open PDF"
+                      >
+                        Open
+                      </a>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="neu-chip text-xs"
+                      onClick={() => handleUseDocument(doc)}
+                      title="Use this document in chat"
+                    >
+                      Use
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </main>
     </div>
   );

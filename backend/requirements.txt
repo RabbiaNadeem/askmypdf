@@ -12,3 +12,4 @@ python-dotenv
 langchain-huggingface
 sentence-transformers
 pydantic-settings
+supabase
