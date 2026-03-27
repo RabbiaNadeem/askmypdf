@@ -24,6 +24,7 @@ async function sleep(ms: number) {
 
 const MAX_CHAT_ATTEMPTS_PER_CANDIDATE = 4;
 const INITIAL_CHAT_RETRY_DELAY_MS = 250;
+const MAX_MULTI_COLLECTIONS = 5;
 
 type TextPart = { type: 'text'; text: string };
 
@@ -140,19 +141,38 @@ export async function POST(req: NextRequest) {
 
     const question = buildEffectiveQuestion(messages);
 
-    const collection =
-      typeof body?.collection === 'string'
-        ? body.collection
-        : typeof body?.documentId === 'string'
-          ? body.documentId
-          : '';
+    const rawCollections: unknown =
+      body?.collections ?? body?.collection ?? body?.documentIds ?? body?.documentId;
+
+    const activeCollection = typeof body?.activeCollection === 'string' ? body.activeCollection.trim() : '';
+
+    const collections = (() => {
+      const out: string[] = [];
+      const push = (value: unknown) => {
+        if (typeof value !== 'string') return;
+        const v = value.trim();
+        if (!v) return;
+        if (!out.includes(v)) out.push(v);
+      };
+
+      if (Array.isArray(rawCollections)) {
+        for (const c of rawCollections) push(c);
+      } else {
+        push(rawCollections);
+      }
+
+      return out.slice(0, MAX_MULTI_COLLECTIONS);
+    })();
 
     if (!question || !question.trim()) {
       return NextResponse.json({ error: 'No question provided' }, { status: 400 });
     }
 
-    if (!collection || !collection.trim()) {
-      return NextResponse.json({ error: 'Missing collection (upload a PDF first).' }, { status: 400 });
+    if (collections.length === 0) {
+      return NextResponse.json(
+        { error: 'Missing collection(s) (upload PDF(s) first).' },
+        { status: 400 },
+      );
     }
     
     // Connect to FastAPI backend
@@ -173,7 +193,8 @@ export async function POST(req: NextRequest) {
             },
             body: JSON.stringify({
               question,
-              collection,
+              collection: collections,
+              activeCollection: activeCollection || undefined,
             }),
           });
           lastError = null;

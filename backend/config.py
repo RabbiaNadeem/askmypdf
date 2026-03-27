@@ -8,7 +8,10 @@ from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
 
 
-load_dotenv()
+BACKEND_DIR = Path(__file__).resolve().parent
+ENV_PATH = BACKEND_DIR / ".env"
+
+load_dotenv(ENV_PATH)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -47,8 +50,15 @@ class Settings(BaseSettings):
 	GROQ_API_KEY: str | None = None
 	GROQ_MODEL: str = "llama-3.3-70b-versatile"
 
+	# Supabase
+	# NOTE: This project uses the anon key by default (policy-controlled writes).
+	SUPABASE_URL: str | None = None
+	SUPABASE_ANON_KEY: str | None = None
+	SUPABASE_BUCKET: str = "pdfs"
+	SUPABASE_PUBLIC_BUCKET: bool = True
+
 	class Config:
-		env_file = ".env"
+		env_file = str(ENV_PATH)
 
 	def cors_origins_list(self) -> List[str]:
 		return [o.strip() for o in (self.CORS_ORIGINS or "").split(",") if o.strip()]
