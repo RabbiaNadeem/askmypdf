@@ -12,6 +12,13 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+
+    // Workspace-specific ignores (avoid linting Python virtualenvs / generated assets):
+    ".venv/**",
+    "backend/venv/**",
+    "backend/__pycache__/**",
+    "backend/chroma_db/**",
+    "backend/uploads/**",
   ]),
 ]);
 
