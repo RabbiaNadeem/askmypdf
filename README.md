@@ -1,105 +1,82 @@
 # Ask My PDF
 
-Local dev app that lets you upload up to 5 PDFs, ingest them into Qdrant (vector DB), and chat with multiple documents simultaneously.
+Ask My PDF is a local-dev RAG app that lets you upload PDFs, index them into Qdrant, and chat with one or multiple documents with page citations.
 
-This repository contains a Next.js frontend and a FastAPI backend.
+This repository contains:
+- A Next.js (App Router) frontend
+- A FastAPI backend (LangChain + Groq + Qdrant + Supabase)
 
 ## Features
 
-- **Single & Multi-Document Chat**: Ask questions about one PDF or search across 5 PDFs at once.
-- **PDF Sidebar**: Clean document list in the chat interface with select/deselect and active document highlighting.
-- **Vector Search**: Uses Qdrant for semantic similarity search across documents.
-- **RAG Pipeline**: Retrieves relevant chunks, deduplicates by page, and scores by confidence.
-- **Citations**: Every answer shows which PDF page it came from with a confidence score.
-- **Dark/Light Theme**: Theme toggle with CSS variables for both light and dark modes.
-- **Neumorphic UI**: Soft, modern design with depth and tactile feedback.
+- **Upload PDFs**: Validates PDF magic bytes, ingests into Qdrant, stores files + metadata in Supabase.
+- **Single & Multi-Document Chat**: Select up to 5 PDFs and ask questions across them.
+- **Active PDF Hint**: The UI can mark one selected PDF as “active” to prioritize it.
+- **Citations**: Answers include filename + page number citations with a confidence score.
+- **Streaming Chat**: Backend streams SSE; the UI renders incremental text + citation badges.
+- **Chat History (optional)**: If Supabase is configured, the backend exposes `/chat/{session_id}` and the UI can load history.
+- **Theme Toggle**: Light/dark UI via `next-themes`.
+
+## Project overview
+
+**Frontend** (Next.js)
+- Pages: upload UI (`/`) and chat UI (`/chat`).
+- API proxies (so the browser never talks to FastAPI directly):
+	- `POST /api/upload` → FastAPI `POST /upload`
+	- `POST /api/chat` → FastAPI `POST /chat` (SSE)
+	- `GET /api/documents` → FastAPI `GET /documents`
+	- `GET /api/chat/history` → FastAPI `GET /chat/{sessionId}`
+
+**Backend** (FastAPI)
+- `POST /upload`: stores the file in Supabase Storage + inserts a `documents` row + indexes PDF chunks into a per-document Qdrant collection.
+- `GET /documents`: returns recent documents from Supabase Postgres.
+- `DELETE /documents/{doc_id}`: deletes Qdrant collection + Storage object + DB row.
+- `POST /chat`: hybrid retrieval from Qdrant, builds context, and streams an LLM response + citations.
+
+## How it works (end-to-end)
+
+### Upload
+1. UI uploads a file to `POST /api/upload`.
+2. Next.js proxies to FastAPI `POST /upload`.
+3. FastAPI:
+	 - Validates PDF file header (`%PDF`).
+	 - Loads pages via PyMuPDF.
+	 - Splits into chunks (`chunk_size=512`, `chunk_overlap=128`).
+	 - Writes vectors to Qdrant (collection name is deterministic + doc-scoped).
+	 - Uploads the original PDF bytes to Supabase Storage.
+	 - Inserts a row into `public.documents`.
+
+### Chat
+1. UI selects up to 5 collections and sends messages to `POST /api/chat`.
+2. Next.js converts follow-ups into a single “effective question” and proxies to FastAPI `POST /chat`.
+3. FastAPI retrieval:
+	 - Normalizes short queries for search (e.g. expands `ML` → `machine learning`).
+	 - Queries each selected Qdrant collection and interleaves results to avoid one PDF dominating.
+	 - Applies `RAG_MIN_SCORE` filtering.
+	 - Applies keyword gating when keywords are meaningful.
+	 - Builds LLM context from the top chunks (`CONTEXT_MAX_CHUNKS`, scaled by number of selected PDFs).
+	 - Generates citations from the same chunks used as context (prevents “wrong PDF” references).
 
 ## Quick start (Windows / PowerShell)
 
-Note: run all commands from the folder that contains `package.json` (this repo’s root). If you cloned or unzipped into a parent folder like `...\Ask-my-PDF\askmypdf`, make sure you `cd` into `askmypdf` before running `npm`/`next` commands. Otherwise you may see errors like “Can’t resolve 'tailwindcss'”.
+Run all commands from the folder that contains `package.json` (this repo root).
 
-1. Create and activate Python venv
+### 0) Start Qdrant (local)
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r backend/requirements.txt
-```
-
-2. Start the FastAPI backend (default: port 8000)
+If you don’t already have a Qdrant instance running, the easiest option is Docker:
 
 ```powershell
-cd backend
-uvicorn main:app --reload
+docker run --name qdrant -p 6333:6333 -p 6334:6334 qdrant/qdrant
 ```
 
-Alternatively (run from repo root):
+Qdrant will be available at `http://127.0.0.1:6333`.
 
-```powershell
-python -m uvicorn main:app --app-dir backend --reload
-```
+### 1) Configure Supabase
 
-3. Install frontend deps and run Next.js
+The backend uses Supabase for **Storage** and **metadata**. Create a Supabase project and configure:
 
-```powershell
-cd ..
-npm --version
-npm install
-npm run dev
-```
+1) Create a Storage bucket named `pdfs`
 
-If you prefer to run both the backend and frontend at once, open two shells (one for the Python venv/backend and one for Node.js/frontend) and run the commands in each.
-
-4. Open the app
-
-- Frontend: http://localhost:3000
-- Backend health: http://127.0.0.1:8000/
-
-## How it works
-
-### Upload Phase
-- Upload up to 5 PDFs on the homepage (sequentially or drag-and-drop). Each file is POSTed to `/api/upload`, which forwards to the FastAPI `/upload` endpoint.
-- The backend splits each PDF into chunks and ingests them into a separate Qdrant collection (scoped per document).
-- Document metadata (filename, collection ID, chunk count) is stored in Supabase Postgres.
-- The upload response includes a `collection` ID; the frontend stores it and the document appears in the sidebar.
-
-### Chat Phase
-- Visit `/chat` to see all uploaded PDFs in a left sidebar.
-- **Select up to 5 PDFs** (checkboxes) to include in your chat session.
-- Clicking a PDF makes it the **active document** (highlighted in the header).
-- When you ask a question, the frontend sends the list of selected collection IDs to the backend.
-- The backend queries **all selected collections** in parallel, merges results, and applies:
-  - Score thresholding (default: 0.55 confidence)
-  - Keyword matching (to filter irrelevant chunks)
-  - Per-page deduplication (keeps best-scoring chunk per page)
-- The LLM generates an answer using the merged context and always cites the source PDF + page number.
-- Streaming responses appear with bold **citation badges** showing confidence scores (green ≥85%, yellow 70–85%, red <70%).
-
-## Environment variables
-
-- `GROQ_API_KEY` (or whichever model provider key you use) — set in your environment or CI/CD secrets. Do NOT commit API keys to git.
-- `BACKEND_URL` (optional) — used by the Next.js proxy when the backend is not at the default `http://127.0.0.1:8000`.
-- `MAX_MULTI_COLLECTIONS` (optional, default: 5) — maximum number of PDFs to chat across simultaneously.
-- `QDRANT_URL` — your Qdrant endpoint (Qdrant Cloud cluster URL or `http://localhost:6333`).
-- `QDRANT_API_KEY` (optional) — required for Qdrant Cloud.
-- `SUPABASE_URL` — your Supabase project URL (backend only).
-- `SUPABASE_ANON_KEY` — your Supabase anon key (backend only for this project).
-- `SUPABASE_BUCKET` (optional) — Supabase Storage bucket name (default: `pdfs`).
-- `SUPABASE_PUBLIC_BUCKET` (optional) — set to `true` if bucket is public (default: `true`).
-- `RAG_TOP_K` (optional, default: 6) — number of chunks to retrieve per collection before deduplication.
-- `RAG_MIN_SCORE` (optional, default: 0.55) — minimum similarity score threshold for retrieval.
-- `CONTEXT_MAX_CHUNKS` (optional, default: 6) — maximum chunks to include in LLM context.
-- `CITATIONS_MAX` (optional, default: 4) — maximum citation badges to show in UI.
-
-## Supabase setup (Storage + metadata)
-
-This app uploads PDFs into **Supabase Storage** (bucket `pdfs`) and stores document metadata in **Supabase Postgres**.
-
-Important: this project uses the **anon key** server-side. For that to work, you must allow the relevant inserts/selects via RLS policies.
-
-### 1) Create the `documents` table
-
-Run in Supabase SQL editor:
+2) Create the `documents` table (Supabase SQL editor):
 
 ```sql
 create table if not exists public.documents (
@@ -116,38 +93,109 @@ create index if not exists documents_created_at_idx
 	on public.documents (created_at desc);
 ```
 
-### 2) Enable RLS + allow anon access (dev-friendly)
-
-If you want the backend (using anon key) to insert and read rows, enable RLS and add policies:
+If you want chat history, create a `messages` table (optional):
 
 ```sql
-alter table public.documents enable row level security;
+create table if not exists public.messages (
+	id bigint generated by default as identity primary key,
+	session_id text not null,
+	role text not null,
+	content text not null,
+	created_at timestamptz not null default now()
+);
 
-drop policy if exists "documents_select_anon" on public.documents;
-create policy "documents_select_anon"
-on public.documents
-for select
-to anon
-using (true);
-
-drop policy if exists "documents_insert_anon" on public.documents;
-create policy "documents_insert_anon"
-on public.documents
-for insert
-to anon
-with check (true);
+create index if not exists messages_session_id_idx
+	on public.messages (session_id, created_at);
 ```
 
-### 3) Storage bucket policy (dev-friendly)
+### 2) Backend (FastAPI)
 
-Create a bucket named `pdfs` in Supabase Storage.
+Create a venv and install backend deps:
 
-If the bucket is **public**, PDFs will have a public URL and the UI shows an "Open" link.
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r backend/requirements.txt
+```
 
-To allow the backend (using anon key) to upload into that bucket, add a Storage policy that allows inserts into `storage.objects` for bucket `pdfs`.
-The exact SQL can vary by Supabase version, but conceptually you need `insert` for `anon` on `storage.objects` filtered by `bucket_id = 'pdfs'`.
+Create `backend/.env` (example):
 
-If you prefer safer defaults, switch to a service role key (backend-only) and tighten policies.
+```ini
+GROQ_API_KEY=your_key
+GROQ_MODEL=llama-3.3-70b-versatile
+
+QDRANT_URL=http://127.0.0.1:6333
+QDRANT_API_KEY=
+
+SUPABASE_URL=https://xxxxx.supabase.co
+SUPABASE_ANON_KEY=eyJ...
+SUPABASE_BUCKET=pdfs
+SUPABASE_PUBLIC_BUCKET=true
+
+# RAG tuning
+RAG_TOP_K=50
+RAG_MIN_SCORE=0.20
+CONTEXT_MAX_CHUNKS=10
+CITATIONS_MAX=1
+CITATIONS_MIN_SCORE=0.20
+```
+
+Start the backend (port 8000):
+
+```powershell
+cd backend
+uvicorn main:app --reload
+```
+
+### 3) Frontend (Next.js)
+
+Install deps and run dev server:
+
+```powershell
+npm install
+npm run dev
+```
+
+Optionally set `BACKEND_URL` for Next.js (defaults to `http://127.0.0.1:8000`).
+
+### 4) Open the app
+
+- Frontend: http://localhost:3000
+- Backend health: http://127.0.0.1:8000/
+
+## Environment variables
+
+Frontend
+- `BACKEND_URL` (optional) — where Next.js proxies requests (default: `http://127.0.0.1:8000`).
+
+Backend (loaded from `backend/.env`)
+- `GROQ_API_KEY` — required.
+- `GROQ_MODEL` — optional (default: `llama-3.3-70b-versatile`).
+- `QDRANT_URL` — required (default: `http://localhost:6333`).
+- `QDRANT_API_KEY` — optional (required for Qdrant Cloud).
+- `SUPABASE_URL` / `SUPABASE_ANON_KEY` — required for upload and documents listing.
+- `SUPABASE_SERVICE_ROLE_KEY` — optional (enables deletes even when RLS blocks anon deletes).
+- `SUPABASE_BUCKET` — optional (default: `pdfs`).
+- `SUPABASE_PUBLIC_BUCKET` — optional (default: `true`).
+
+RAG tuning (backend)
+- `RAG_TOP_K` — chunks retrieved per selected PDF (default: `50`).
+- `RAG_MIN_SCORE` — similarity threshold (default: `0.20`).
+- `CONTEXT_MAX_CHUNKS` — max chunks included in LLM context per PDF (default: `10`, multiplied by number of selected PDFs).
+- `CITATIONS_MAX` — UI citation limit (default: `1`). For multi-PDF questions, the backend may return more than `CITATIONS_MAX` to ensure at least one citation per selected PDF.
+- `CITATIONS_MIN_SCORE` — citation threshold (default: `0.20`).
+
+Other
+- `MAX_MULTI_COLLECTIONS` (optional, default: `5`) — backend-side cap for how many PDFs can be queried.
+
+## Supabase notes
+
+This project uses the anon key server-side by default. If Row Level Security is enabled, you’ll need policies that allow:
+- inserts/selects on `public.documents`
+- inserts/selects on `public.messages` (if you enable history)
+- uploads/removes for `storage.objects` in your bucket
+
+If you don’t want dev-friendly RLS policies, set `SUPABASE_SERVICE_ROLE_KEY` in `backend/.env` and keep it server-side only.
 
 ## UI features
 
@@ -200,60 +248,16 @@ The response streams SSE (Server-Sent Events) with:
 - `type: "text-delta"` — answer text chunks
 - `type: "data-citations"` — citation metadata (filename, page, confidence score, snippet)
 
-Merge results are automatically deduplicated, scored, and context-limited before being sent to the LLM.
+## Project structure
 
-## PDF Sidebar & Document Selection
+- `app/` — Next.js UI (upload + chat) and API proxy routes
+- `backend/` — FastAPI app + ingestion/retrieval services
+- `storage/` — local storage directory (created automatically; Supabase is the primary storage)
 
-When you visit `/chat`, the left sidebar displays all uploaded PDFs with:
+## Notes on deployment
 
-- **Checkbox**: Select/deselect PDFs (up to 5 at once) to include in chat
-- **Filename**: Click to make it the active document
-- **Metadata**: Shows chunk count and "Active" indicator
-- **Open**: Link to view the PDF (if public bucket)
-- **Active Indicator**: The currently active PDF has a subtle ring highlight and is shown in the top-right header
-
-### Workflow
-
-1. **Upload Phase**: Upload 1–5 PDFs on the home page
-2. **Selection**: Go to `/chat` and check which PDFs to chat across
-3. **Active Document**: Click a PDF title (or check it) to set it as active — the header updates and it moves to the top of the selected list
-4. **Ask**: Type a question; the backend searches all selected PDFs and returns merged results with citations
-
-If all 5 PDFs are selected and you want to switch to a different one, either:
-- Uncheck one and then click a new PDF to select it as active, or
-- Just click the PDF you want to focus on (it will replace one if at the limit)
-
-- Don't commit large files (uploads). These folders are in `.gitignore`.
-- If chat/upload fails with connection errors, verify the backend is running and that `BACKEND_URL` (if set) is correct.
-
-### Files you likely changed
-
-**Frontend (Multi-Document Features)**
-- `app/chat/page.tsx` — chat UI with PDF sidebar, multi-select (up to 5), and active document indicator
-- `app/page.tsx` — upload UI supporting multi-file drag-and-drop (sequential upload)
-- `app/api/chat/route.ts` — Next.js proxy that accepts `collection` (string or array) and forwards merged collection list to backend
-- `app/api/documents/route.ts` — documents list proxy (fetches from backend)
-- `app/globals.css` — theme + component styling for sidebar and badges
-
-**Backend (Multi-Collection Retrieval)**
-- `backend/routes/chat.py` — `/chat` endpoint now merges results from multiple Qdrant collections, applies scoring/deduping
-- `backend/services/retrieval.py` — unchanged (per-collection vector search)
-- `backend/routes/upload.py` — unchanged (single-document ingestion to Supabase)
-
-**Recommended commit:**
-
-```bash
-git add \
-  app/chat/page.tsx \
-  app/page.tsx \
-  app/api/chat/route.ts \
-  app/api/documents/route.ts \
-  app/globals.css \
-  backend/routes/chat.py \
-  README.md
-
-git commit -m "feat: multi-document chat (select up to 5 PDFs, merged retrieval)"
-```
+- The chat proxy route runs on the Edge runtime. If you deploy the frontend, `BACKEND_URL` must be reachable from the Edge environment (public URL).
+- Keep `GROQ_API_KEY` and Supabase keys server-side only.
 
 ## Troubleshooting
 
@@ -293,4 +297,4 @@ This is a small demo/work-in-progress. Open an issue or PR with improvements.
 
 To ensure a clean git history when contributing, make sure you only stage the files you actually modified (for example, `app/globals.css`, `app/page.tsx`, `app/chat/page.tsx`, etc.).
 
-The repository ignores local build artifacts and generated content (e.g., `.next/`, `backend/chroma_db/`, `uploads/`), so your commits should generally only include source code and docs.
+The repository ignores local build artifacts and generated content (e.g., `.next/`, `uploads/`), so your commits should generally only include source code and docs.

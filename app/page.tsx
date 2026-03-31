@@ -60,7 +60,13 @@ export default function Home() {
       setRecentDocs(Array.isArray(json.documents) ? json.documents : []);
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Failed to load documents.';
-      setDocsError(message);
+      // Suppress 502 in UI, but clear stale results so we don't show ghost documents.
+      if (message.includes('502')) {
+        setRecentDocs([]);
+        setDocsError(null);
+      } else {
+        setDocsError(message);
+      }
     } finally {
       setDocsLoading(false);
     }
