@@ -34,11 +34,11 @@ class Settings(BaseSettings):
 
 	# RAG
 	# Qdrant similarity scores are typically higher-is-better; tune if needed.
-	RAG_TOP_K: int = 30
+	RAG_TOP_K: int = 50
 	RAG_MIN_SCORE: float = 0.20
 	# How many retrieved chunks are included in the LLM prompt context.
 	# Keep this independent from how many citations the UI shows.
-	CONTEXT_MAX_CHUNKS: int = 6
+	CONTEXT_MAX_CHUNKS: int = 10
 
 	# Citations
 	# Limit how many references we show in the UI.
@@ -54,6 +54,9 @@ class Settings(BaseSettings):
 	# NOTE: This project uses the anon key by default (policy-controlled writes).
 	SUPABASE_URL: str | None = None
 	SUPABASE_ANON_KEY: str | None = None
+	# Optional: enables backend-admin operations (like deleting rows/files) even when RLS blocks anon.
+	# Keep this server-side only. Do NOT expose to the browser.
+	SUPABASE_SERVICE_ROLE_KEY: str | None = None
 	SUPABASE_BUCKET: str = "pdfs"
 	SUPABASE_PUBLIC_BUCKET: bool = True
 

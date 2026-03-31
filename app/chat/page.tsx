@@ -195,7 +195,15 @@ export default function ChatPage() {
       setDocuments(Array.isArray(json.documents) ? json.documents : []);
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Failed to load documents.';
-      setDocsError(message);
+      if (message.includes('502')) {
+        // Backend unreachable. Don't keep showing stale docs from a previous successful load.
+        setDocuments([]);
+        setSelectedCollections([]);
+        setActiveCollection(null);
+        setDocsError(null);
+      } else {
+        setDocsError(message);
+      }
     } finally {
       setDocsLoading(false);
     }
@@ -204,6 +212,27 @@ export default function ChatPage() {
   useEffect(() => {
     void refreshDocuments();
   }, [refreshDocuments]);
+
+  useEffect(() => {
+    // If collections disappear (deleted / Qdrant reset / Supabase row removed),
+    // keep the local selection from pointing at non-existent collections.
+    const available = new Set(documents.map((d) => (d.collection || '').trim()).filter(Boolean));
+
+    setSelectedCollections((prev) => prev.filter((c) => available.has((c || '').trim())));
+
+    if (activeCollection && !available.has(activeCollection)) {
+      setActiveCollection(null);
+    }
+
+    if (uploadedCollection && !available.has(uploadedCollection)) {
+      setUploadedCollection(null);
+      setUploadedFilename(null);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('askmypdf:lastCollection');
+        localStorage.removeItem('askmypdf:lastUploaded');
+      }
+    }
+  }, [documents, activeCollection, uploadedCollection]);
 
   useEffect(() => {
     // Keep selection sane across reloads.
@@ -280,7 +309,13 @@ export default function ChatPage() {
     try {
       const res = await fetch(`/api/documents/${doc.doc_id}`, { method: 'DELETE' });
       if (!res.ok) {
-        throw new Error('Failed to delete document');
+        const text = await res.text();
+        try {
+          const json = JSON.parse(text) as { error?: string; detail?: string };
+          throw new Error(json.detail || json.error || 'Failed to delete document');
+        } catch {
+          throw new Error(text || 'Failed to delete document');
+        }
       }
       
       setDocuments((prev) => prev.filter((d) => d.doc_id !== doc.doc_id));
@@ -288,6 +323,9 @@ export default function ChatPage() {
       setSelectedCollections((prev) => prev.filter((c) => c !== doc.collection));
       if (activeCollection === doc.collection) setActiveCollection(null);
       if (uploadedCollection === doc.collection) setUploadedCollection(null);
+
+      // Ensure the list is consistent with the backend after deletion.
+      await refreshDocuments();
       
     } catch (e) {
       setDocsError(e instanceof Error ? e.message : 'Error deleting document');
@@ -483,17 +521,28 @@ export default function ChatPage() {
                           </div>
                         </button>
 
-                        {doc.url ? (
-                          <a
-                            className="neu-chip text-xs"
-                            href={doc.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            title="Open PDF"
+                        <div className="flex gap-2 shrink-0">
+                          {doc.url ? (
+                            <a
+                              className="neu-chip text-xs flex items-center justify-center"
+                              href={doc.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Open PDF"
+                            >
+                              Open
+                            </a>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="neu-chip text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+                            onClick={() => void handleDeleteDocument(doc)}
+                            disabled={deletingId === doc.doc_id}
+                            title="Delete PDF"
                           >
-                            Open
-                          </a>
-                        ) : null}
+                            {deletingId === doc.doc_id ? '...' : 'Del'}
+                          </button>
+                        </div>
                       </div>
                     );
                   })

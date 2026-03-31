@@ -221,6 +221,22 @@ def _extract_keywords(question: str) -> list[str]:
     words = re.findall(r"[a-z0-9]+", q)
     keywords = [w for w in words if len(w) >= 4 and w not in _STOPWORDS]
 
+    # Heuristic: short questions like "types of ml" lose signal because "ml" is short
+    # and "types" is often a stopword. Add strong ML-type phrases so retrieval prefers
+    # the section that actually enumerates them.
+    wants_types = any(w in {"type", "types", "kind", "kinds", "category", "categories"} for w in words)
+    mentions_ml = (
+        "machine learning" in q
+        or ("machine" in words and "learning" in words)
+        or ("ml" in words)
+    )
+    if wants_types and mentions_ml:
+        for p in ["supervised learning", "unsupervised learning", "reinforcement learning"]:
+            if p not in phrases:
+                phrases.append(p)
+        # Also add single-token variants for resilience.
+        keywords.extend(["supervised", "unsupervised", "reinforcement"])
+
     # De-dupe while preserving order.
     seen: set[str] = set()
     out: list[str] = []
@@ -273,6 +289,34 @@ def _format_context(results: list[tuple[Any, float]]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+def _normalize_question_for_search(question: str) -> str:
+    """Normalize the user's question for vector search.
+
+    This improves retrieval for short queries like "types of ML" by expanding
+    common abbreviations and adding disambiguating terms.
+    """
+    q = (question or "").strip()
+    if not q:
+        return ""
+
+    # Expand ML abbreviation when it appears as a token.
+    # e.g. "types of ML" -> "types of machine learning"
+    q_norm = re.sub(r"\bml\b", "machine learning", q, flags=re.IGNORECASE)
+
+    # If the user is asking for types/categories of ML, add strong terms that
+    # help retrieval find the enumerated section.
+    words = re.findall(r"[a-z0-9]+", q_norm.lower())
+    wants_types = any(w in {"type", "types", "kind", "kinds", "category", "categories"} for w in words)
+    mentions_ml = (
+        "machine learning" in q_norm.lower()
+        or ("machine" in words and "learning" in words)
+    )
+    if wants_types and mentions_ml:
+        q_norm = q_norm + " supervised unsupervised reinforcement"
+
+    return q_norm
+
+
 @router.post("/chat")
 async def chat(request: ChatRequest):
     """Stream answer + citations via AI SDK UI-message JSON SSE."""
@@ -288,24 +332,49 @@ async def chat(request: ChatRequest):
             detail="Missing collection(s). Upload a PDF first and pass its collection id(s).",
         )
 
-    top_k = int(getattr(settings, "RAG_TOP_K", 6) or 6)
+    base_k = int(getattr(settings, "RAG_TOP_K", 6) or 6)
+    search_query = _normalize_question_for_search(question)
 
+    # For multi-collection queries, retrieve from each separately to ensure fair representation
     raw_results: list[tuple[Any, float]] = []
     failures: list[str] = []
-    for collection in collections:
+    
+    if len(collections) > 1:
+        # Interleave results from each collection to balance representation
+        per_collection_results: dict[str, list[tuple[Any, float]]] = {}
+        for collection in collections:
+            try:
+                per_collection_results[collection] = list(
+                    similarity_search_with_score(
+                        search_query,
+                        collection_name=collection,
+                        k=base_k,
+                    )
+                )
+            except Exception:
+                failures.append(collection)
+                per_collection_results[collection] = []
+        
+        # Interleave: take one from each collection in round-robin fashion
+        max_results = max(len(v) for v in per_collection_results.values()) if per_collection_results else 0
+        for idx in range(max_results):
+            for collection in collections:
+                if idx < len(per_collection_results.get(collection, [])):
+                    raw_results.append(per_collection_results[collection][idx])
+    else:
+        # Single collection: retrieve normally
         try:
             raw_results.extend(
                 list(
                     similarity_search_with_score(
-                        question,
-                        collection_name=collection,
-                        k=top_k,
+                        search_query,
+                        collection_name=collections[0],
+                        k=base_k,
                     )
                 )
             )
         except Exception:
-            failures.append(collection)
-            continue
+            failures.append(collections[0])
 
     if not raw_results:
         # If all collections failed, surface an actionable error.
@@ -323,27 +392,80 @@ async def chat(request: ChatRequest):
     scored_results = [(doc, score) for (doc, score) in raw_results if float(score) >= min_score]
 
     # Topic gating: only keep chunks that actually mention the topic keywords.
-    # This prevents "fallback" answers from still showing unrelated citations.
+    # For multi-PDF queries, apply keyword filtering only when we have meaningful keywords;
+    # otherwise fall back to scored results to avoid accidentally dropping a whole PDF.
     keywords = _extract_keywords(question)
-    relevant_results = [
-        (doc, score)
-        for (doc, score) in scored_results
-        if _matches_keywords(getattr(doc, "page_content", "") or "", keywords)
-    ]
+    if len(collections) > 1 and not keywords:
+        relevant_results = scored_results
+    else:
+        relevant_results = [
+            (doc, score)
+            for (doc, score) in scored_results
+            if _matches_keywords(getattr(doc, "page_content", "") or "", keywords)
+        ]
 
     results = relevant_results
 
     # Context for the LLM should not be limited by how many citations we *display*.
-    context_max = int(getattr(settings, "CONTEXT_MAX_CHUNKS", 6) or 6)
-    context_src = _dedupe_best_chunk_per_page(results)[: max(0, context_max)]
+    # Don't deduplicate by page for context — we want all relevant chunks.
+    # For multi-collection queries, allow more context chunks to ensure all PDFs contribute.
+    base_context_max = int(getattr(settings, "CONTEXT_MAX_CHUNKS", 6) or 6)
+    context_max = base_context_max * len(collections) if len(collections) > 1 else base_context_max
+    context_src = results[: max(0, context_max)]
     context_text = _format_context(context_src) if context_src else ""
 
     # If nothing clears the threshold, treat context as irrelevant.
+    # IMPORTANT: citations must be drawn from the SAME chunks we gave the LLM as context,
+    # otherwise the UI can show a reference from the wrong PDF.
     citations_min_score = float(getattr(settings, "CITATIONS_MIN_SCORE", min_score) or min_score)
     citations_max = int(getattr(settings, "CITATIONS_MAX", 4) or 4)
-    citations_src = [(doc, score) for (doc, score) in results if float(score) >= citations_min_score]
-    citations_src = _dedupe_best_chunk_per_page(citations_src)
-    citations_src = citations_src[: max(0, citations_max)]
+    if len(collections) > 1:
+        # Ensure at least one citation can be shown per selected PDF.
+        citations_max = max(citations_max, len(collections))
+
+    citations_src_all = [(doc, score) for (doc, score) in context_src if float(score) >= citations_min_score]
+
+    if len(collections) > 1:
+        # Balance citations across sources (PDFs) but ONLY from context chunks.
+        by_source: dict[str, list[tuple[Any, float]]] = {}
+        for doc, score in citations_src_all:
+            meta = getattr(doc, "metadata", {}) or {}
+            source_name = os.path.basename(str(meta.get("source") or meta.get("filename") or "unknown"))
+            by_source.setdefault(source_name, []).append((doc, score))
+
+        # Pick best from each source first (stable order based on collections preference).
+        # collections are already ordered with activeCollection first.
+        preferred_sources: list[str] = []
+        for doc, _score in context_src:
+            meta = getattr(doc, "metadata", {}) or {}
+            source_name = os.path.basename(str(meta.get("source") or meta.get("filename") or "unknown"))
+            if source_name not in preferred_sources:
+                preferred_sources.append(source_name)
+
+        balanced: list[tuple[Any, float]] = []
+        for source_name in preferred_sources:
+            chunks = by_source.get(source_name) or []
+            if not chunks:
+                continue
+            chunks.sort(key=lambda x: float(x[1]), reverse=True)
+            balanced.append(chunks[0])
+            if len(balanced) >= citations_max:
+                break
+
+        # Fill remaining slots with next-best chunks overall.
+        remaining = []
+        chosen_ids = {id(doc) for (doc, _s) in balanced}
+        for doc, score in citations_src_all:
+            if id(doc) in chosen_ids:
+                continue
+            remaining.append((doc, score))
+        remaining.sort(key=lambda x: float(x[1]), reverse=True)
+        balanced.extend(remaining[: max(0, citations_max - len(balanced))])
+
+        citations_src = balanced[: max(0, citations_max)]
+    else:
+        citations_src = _dedupe_best_chunk_per_page(citations_src_all)
+        citations_src = citations_src[: max(0, citations_max)]
 
     citations = _make_citations(citations_src) if citations_src else []
 

@@ -133,16 +133,12 @@ backend/uploads/
 
 # Project-level uploads and DBs (keep out of git)
 uploads/
-chroma_db/
 
 # Editor / OS
 .vscode/
 .idea/
 
-# Local vector store
-backend/chroma_db/
-
-# Repo-level storage (uploads + chroma)
+# Repo-level storage (uploads + vector db)
 storage/
 
 # Local env files created by Next.js

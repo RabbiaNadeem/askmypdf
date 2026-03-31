@@ -17,7 +17,6 @@ const eslintConfig = defineConfig([
     ".venv/**",
     "backend/venv/**",
     "backend/__pycache__/**",
-    "backend/chroma_db/**",
     "backend/uploads/**",
   ]),
 ]);

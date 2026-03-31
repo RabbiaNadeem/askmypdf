@@ -293,4 +293,4 @@ This is a small demo/work-in-progress. Open an issue or PR with improvements.
 
 To ensure a clean git history when contributing, make sure you only stage the files you actually modified (for example, `app/globals.css`, `app/page.tsx`, `app/chat/page.tsx`, etc.).
 
-The repository ignores local build artifacts and generated content (e.g., `.next/`, `backend/chroma_db/`, `uploads/`), so your commits should generally only include source code and docs.
+The repository ignores local build artifacts and generated content (e.g., `.next/`, `uploads/`), so your commits should generally only include source code and docs.

@@ -11,5 +11,6 @@ huggingface-hub
 python-dotenv
 langchain-huggingface
 sentence-transformers
+fastembed
 pydantic-settings
 supabase

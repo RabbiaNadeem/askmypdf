@@ -7,7 +7,7 @@ from typing import Iterable, Tuple
 
 from fastapi import HTTPException
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_qdrant import QdrantVectorStore
+from langchain_qdrant import QdrantVectorStore, FastEmbedSparse, RetrievalMode
 from qdrant_client import QdrantClient
 
 from config import settings
@@ -22,6 +22,12 @@ def make_collection_name(filename: str, doc_id: str | None = None) -> str:
 
 	If doc_id is provided, it is incorporated so identical filenames do not collide.
 	"""
+	# Be defensive: upstream callers should pass strings, but a bad env/client
+	# value can leak through and cause confusing "... has no attribute 'encode'" errors.
+	filename = str(filename)
+	if doc_id is not None and not isinstance(doc_id, str):
+		doc_id = str(doc_id)
+
 	base = filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
 	stem = base.rsplit(".", 1)[0] if "." in base else base
 	stem = _COLLECTION_SAFE.sub("_", stem).strip("_")
@@ -34,6 +40,11 @@ def make_collection_name(filename: str, doc_id: str | None = None) -> str:
 def get_embeddings() -> HuggingFaceEmbeddings:
 	# Must match ingest
 	return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+
+
+@lru_cache(maxsize=1)
+def get_sparse_embeddings() -> FastEmbedSparse:
+	return FastEmbedSparse(model_name="Qdrant/bm25")
 
 
 @lru_cache(maxsize=1)
@@ -53,6 +64,8 @@ def get_vector_store(collection_name: str) -> QdrantVectorStore:
 		client=get_qdrant_client(),
 		collection_name=collection_name,
 		embedding=get_embeddings(),
+		sparse_embedding=get_sparse_embeddings(),
+		retrieval_mode=RetrievalMode.HYBRID,
 	)
 
 
