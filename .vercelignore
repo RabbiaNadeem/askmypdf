@@ -1,0 +1,9 @@
+# Exclude backend, docker, git files from Vercel
+backend/
+.git/
+.gitignore
+docker-compose.yml
+Dockerfile
+README.md
+requirements.txt
+*.md
