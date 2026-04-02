@@ -11,8 +11,10 @@ from routes.chat import router as chat_router
 
 app = FastAPI()
 
-# Load allowed origins from environment (comma-separated), with sensible defaults for local dev
-origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+origins = [
+    "http://localhost:3000",
+    "https://askmypdf.vercel.app"
+]
 
 app.add_middleware(
     CORSMiddleware,
