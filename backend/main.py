@@ -13,7 +13,7 @@ app = FastAPI()
 
 origins = [
     "http://localhost:3000",
-    "https://askmypdf.vercel.app"
+    "https://askmypdff-olive.vercel.app"
 ]
 
 app.add_middleware(
