@@ -7,12 +7,7 @@ const nextConfig: NextConfig = {
   },
   // Vercel Deployment Configuration
   productionBrowserSourceMaps: false,
-  swcMinify: true,
   compress: true,
-  // API Routes Configuration
-  api: {
-    responseLimit: "50mb",
-  },
   // Headers for API requests
   async headers() {
     return [
