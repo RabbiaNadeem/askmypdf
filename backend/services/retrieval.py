@@ -6,7 +6,7 @@ from functools import lru_cache
 from typing import Iterable, Tuple
 
 from fastapi import HTTPException
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.embeddings import FastEmbedEmbeddings
 from langchain_qdrant import QdrantVectorStore, FastEmbedSparse, RetrievalMode
 from qdrant_client import QdrantClient
 
@@ -37,9 +37,9 @@ def make_collection_name(filename: str, doc_id: str | None = None) -> str:
 
 
 @lru_cache(maxsize=1)
-def get_embeddings() -> HuggingFaceEmbeddings:
+def get_embeddings() -> FastEmbedEmbeddings:
 	# Must match ingest
-	return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+	return FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
 
 
 @lru_cache(maxsize=1)
