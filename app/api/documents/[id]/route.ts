@@ -4,7 +4,7 @@ export const runtime = 'nodejs';
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8000';
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
     const { id } = await params;
 
     const backendReq = await fetch(`${backendUrl}/documents/${id}`, {

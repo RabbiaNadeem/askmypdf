@@ -38,7 +38,7 @@ async function uploadToBackend(backendUrl: string, file: File): Promise<Response
 
 export async function POST(req: NextRequest) {
   try {
-    const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8000';
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
     const candidates = buildBackendCandidates(backendUrl);
 
     const incoming = await req.formData();

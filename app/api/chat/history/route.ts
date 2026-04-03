@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Missing sessionId" }, { status: 400 });
   }
 
-  const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:8000";
+  const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
   
   try {
     const response = await fetch(`${backendUrl}/chat/${sessionId}`, {

@@ -156,7 +156,7 @@ npm install
 npm run dev
 ```
 
-Optionally set `BACKEND_URL` for Next.js (defaults to `http://127.0.0.1:8000`).
+Optionally set `NEXT_PUBLIC_API_URL` for Next.js (defaults to `http://127.0.0.1:8000`).
 
 ### 4) Open the app
 
@@ -166,7 +166,7 @@ Optionally set `BACKEND_URL` for Next.js (defaults to `http://127.0.0.1:8000`).
 ## Environment variables
 
 Frontend
-- `BACKEND_URL` (optional) — where Next.js proxies requests (default: `http://127.0.0.1:8000`).
+- `NEXT_PUBLIC_API_URL` (optional) — where Next.js proxies requests (default: `http://127.0.0.1:8000`).
 
 Backend (loaded from `backend/.env`)
 - `GROQ_API_KEY` — required.
@@ -262,7 +262,7 @@ The response streams SSE (Server-Sent Events) with:
 ## Troubleshooting
 
 - Don't commit large files (uploads). These folders are in `.gitignore`.
-- If chat/upload fails with connection errors, verify the backend is running and that `BACKEND_URL` (if set) is correct.
+- If chat/upload fails with connection errors, verify the backend is running and that `NEXT_PUBLIC_API_URL` (if set) is correct.
 - Multi-document queries: if one collection fails to index or query, the backend skips it and continues with others. Check backend logs for details.
 
 ### Multi-Document Specific Issues

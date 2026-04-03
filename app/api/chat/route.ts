@@ -177,7 +177,7 @@ export async function POST(req: NextRequest) {
     
     // Connect to FastAPI backend
     // In dev, Next.js runs on 3000, FastAPI on 8000
-    const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8000';
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
     const candidates = buildBackendCandidates(backendUrl);
 
     let response: Response | null = null;
@@ -213,7 +213,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error:
-            'Failed to connect to backend. Make sure the FastAPI server is running and BACKEND_URL is correct.',
+            'Failed to connect to backend. Make sure the FastAPI server is running and NEXT_PUBLIC_API_URL is correct.',
           backendCandidates: candidates,
         },
         { status: 502 },

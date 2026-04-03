@@ -27,7 +27,7 @@ const INITIAL_RETRY_DELAY_MS = 500;
 
 export async function GET(req: NextRequest) {
   try {
-    const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8000';
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
     const candidates = buildBackendCandidates(backendUrl);
 
     const { searchParams } = new URL(req.url);
