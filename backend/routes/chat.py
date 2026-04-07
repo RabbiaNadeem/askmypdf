@@ -419,9 +419,10 @@ async def chat(request: ChatRequest):
     # otherwise the UI can show a reference from the wrong PDF.
     citations_min_score = float(getattr(settings, "CITATIONS_MIN_SCORE", min_score) or min_score)
     citations_max = int(getattr(settings, "CITATIONS_MAX", 4) or 4)
-    if len(collections) > 1:
-        # Ensure at least one citation can be shown per selected PDF.
-        citations_max = max(citations_max, len(collections))
+
+    # Citations are user-facing references. Be stricter than retrieval/context so we don't
+    # show misleading references from weak matches (e.g. 50% similarity).
+    citations_min_score = max(citations_min_score, 0.70)
 
     citations_src_all = [(doc, score) for (doc, score) in context_src if float(score) >= citations_min_score]
 
@@ -471,20 +472,35 @@ async def chat(request: ChatRequest):
 
     prompt_template = ChatPromptTemplate.from_template(
         """
-You are "Ask My PDFs" — a helpful RAG assistant.
+You are "Ask My PDFs", an intelligent and honest RAG assistant specialized in answering questions from uploaded PDF documents.
 
-Strict rules:
-1. If the question can be answered from the provided document context → Answer using ONLY the context and ALWAYS cite the exact page number(s).
-2. If the answer is NOT in the document context (or context is empty/irrelevant) → Start your answer with: "I don't have that specific information in the uploaded documents, but in general: " and give a short, accurate explanation.
-3. For meta questions (like "what do you do?") → Answer normally.
-4. Never make up page numbers or pretend something is in the PDF.
+### Strict Instructions:
 
-Be honest, concise and helpful.
+1. **When the answer is in the context**:
+   - Answer **exclusively** using the provided context.
+   - Always cite the exact page number(s) in the format `(p. X)` or `(pp. X-Y)`.
+   - Be precise and faithful to the document.
+   - write definitions in quotation marks and cite the page number, e.g. "Supervised learning is defined as '...' (p. 5)".
+   - If the context contains multiple relevant sections, you can cite multiple pages, e.g. "(pp. 5, 12, 20)".
+   - write list and types in bullet points and cite the page number, e.g.:
+     - Supervised learning (p. 5)
 
-Important:
-- If the Context is empty, you MUST follow rule 2 and you MUST NOT cite pages.
-- If the Context is not empty, you MUST answer ONLY from it and cite page numbers like (p.2).
-- If the Context mentions the topic but does not define it, say so explicitly (still citing the pages where it is mentioned).
+2. **When the answer is NOT in the context** (or context is empty/irrelevant):
+   - Start your response with: **"There is no specific information regarding this in the uploaded documents, but in general: "**
+   - Then provide a short, accurate, and helpful general explanation from next line.
+   - Do **not** cite any pages.
+
+3. **For meta or general questions** (e.g., "What do you do?", "Who are you?"):
+   - Answer normally and naturally without forcing document context.
+
+4. **Never hallucinate**:
+   - Do not make up information, page numbers, or pretend content exists in the PDF.
+   - If the context mentions the topic but doesn't provide enough detail, explicitly say so.
+
+### Important Guidelines:
+- Be concise, professional, and user-friendly.
+- If multiple relevant pages exist, cite the most important ones.
+- Maintain a helpful and transparent tone at all times.
 
 Context:
 {context}

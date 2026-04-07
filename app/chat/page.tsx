@@ -29,6 +29,41 @@ type CitationsPart = {
   data: Citation[];
 };
 
+function displayPdfName(rawName: string): string {
+  const base = (rawName || '').split(/[/\\]/).pop() || rawName || '';
+  let name = base;
+
+  // Ingest uses a temp filename like:
+  // askmypdf_<doc_id>_<random>_<original_filename>.pdf
+  // Sometimes extra id-like segments appear; strip them defensively.
+  if (name.toLowerCase().startsWith('askmypdf_')) {
+    name = name.slice('askmypdf_'.length);
+  }
+
+  for (let i = 0; i < 3; i++) {
+    // uuid-or-hex + token + remainder
+    const m1 = name.match(/^([0-9a-f]{8,}(?:-[0-9a-f]{4,}){1,})_([0-9a-z]{6,})_(.+)$/i);
+    if (m1) {
+      name = m1[3];
+      continue;
+    }
+    const m2 = name.match(/^([0-9a-f]{10,})_([0-9a-z]{6,})_(.+)$/i);
+    if (m2) {
+      name = m2[3];
+      continue;
+    }
+    break;
+  }
+
+  // Final pass: remove a single mkstemp-like random prefix.
+  const m3 = name.match(/^([0-9a-z]{6,12})_(.+\.pdf)$/i);
+  if (m3) {
+    name = m3[2];
+  }
+
+  return name || base;
+}
+
 function dedupeCitationsByPage(items: Citation[]): Citation[] {
   const best = new Map<string, Citation>();
 
@@ -124,6 +159,7 @@ export default function ChatPage() {
     return localStorage.getItem('askmypdf:lastCollection');
   });
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDeleteDoc, setPendingDeleteDoc] = useState<DocumentRow | null>(null);
 
   const [activeCollection, setActiveCollection] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
@@ -176,6 +212,17 @@ export default function ChatPage() {
   >(null);
 
   const displayError = submitError ?? error?.message ?? null;
+
+  useEffect(() => {
+    if (!pendingDeleteDoc) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPendingDeleteDoc(null);
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [pendingDeleteDoc]);
 
   const refreshDocuments = useCallback(async () => {
     setDocsLoading(true);
@@ -304,7 +351,6 @@ export default function ChatPage() {
   };
 
   const handleDeleteDocument = async (doc: DocumentRow) => {
-    if (!confirm(`Are you sure you want to delete "${doc.filename}"?`)) return;
     setDeletingId(doc.doc_id);
     try {
       const res = await fetch(`/api/documents/${doc.doc_id}`, { method: 'DELETE' });
@@ -326,12 +372,19 @@ export default function ChatPage() {
 
       // Ensure the list is consistent with the backend after deletion.
       await refreshDocuments();
+
+      setPendingDeleteDoc(null);
       
     } catch (e) {
       setDocsError(e instanceof Error ? e.message : 'Error deleting document');
     } finally {
       setDeletingId(null);
     }
+  };
+
+  const openDeleteDialog = (doc: DocumentRow) => {
+    setDocsError(null);
+    setPendingDeleteDoc(doc);
   };
 
   const handleClearChat = () => {
@@ -403,6 +456,46 @@ export default function ChatPage() {
 
   return (
     <div className="neu-page flex h-screen flex-col px-4">
+      {pendingDeleteDoc ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirm delete document"
+          onMouseDown={(e) => {
+            if (e.currentTarget === e.target && deletingId !== pendingDeleteDoc.doc_id) {
+              setPendingDeleteDoc(null);
+            }
+          }}
+        >
+          <div className="neu-panel-inset w-full max-w-md p-5">
+            <div className="text-sm font-bold">Delete PDF?</div>
+            <div className="mt-2 text-sm opacity-80">
+              This will permanently delete <span className="font-semibold">{pendingDeleteDoc.filename}</span>.
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className="neu-btn"
+                onClick={() => setPendingDeleteDoc(null)}
+                disabled={deletingId === pendingDeleteDoc.doc_id}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="neu-btn neu-btn-danger"
+                onClick={() => void handleDeleteDocument(pendingDeleteDoc)}
+                disabled={deletingId === pendingDeleteDoc.doc_id}
+              >
+                {deletingId === pendingDeleteDoc.doc_id ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="mx-auto flex h-full w-full max-w-5xl flex-col py-4">
         <header className="mb-4">
           <div className="neu-header-bar flex items-center justify-between gap-4">
@@ -536,7 +629,7 @@ export default function ChatPage() {
                           <button
                             type="button"
                             className="neu-chip text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
-                            onClick={() => void handleDeleteDocument(doc)}
+                            onClick={() => openDeleteDialog(doc)}
                             disabled={deletingId === doc.doc_id}
                             title="Delete PDF"
                           >
@@ -620,6 +713,8 @@ export default function ChatPage() {
                       const active =
                         openCitation?.messageId === m.id && openCitation?.citationId === c.id;
 
+                      const displayName = displayPdfName(c.filename);
+
                       const badgeClasses =
                         tone === 'good'
                           ? 'bg-emerald-600/90 text-white'
@@ -641,9 +736,9 @@ export default function ChatPage() {
                               return { messageId: m.id, citationId: c.id };
                             });
                           }}
-                          title={`${c.filename} • p.${c.page} • confidence ${formatConfidence(c.score)}`}
+                          title={`${displayName} • p.${c.page} • confidence ${formatConfidence(c.score)}`}
                         >
-                          {c.filename} · p.{c.page} · {formatConfidence(c.score)}
+                          {displayName} · p.{c.page} · {formatConfidence(c.score)}
                         </button>
                       );
                     })}
@@ -654,10 +749,11 @@ export default function ChatPage() {
                   (() => {
                     const c = citations.find((x) => x.id === openCitation.citationId);
                     if (!c) return null;
+                    const displayName = displayPdfName(c.filename);
                     return (
                       <div className="mt-2 neu-chat-bubble-ai p-3 text-xs">
                         <div className="font-semibold">
-                          {c.filename} — page {c.page} (confidence {formatConfidence(c.score)})
+                          {displayName} — page {c.page} (confidence {formatConfidence(c.score)})
                         </div>
                         <div className="mt-1 opacity-80">{c.snippet}</div>
                       </div>

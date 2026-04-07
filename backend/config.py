@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 	# Limit how many references we show in the UI.
 	CITATIONS_MAX: int = 1
 	# Optional extra cutoff for citations (can be >= RAG_MIN_SCORE).
-	CITATIONS_MIN_SCORE: float = 0.20
+	CITATIONS_MIN_SCORE: float = 0.70
 
 	# LLM (Groq)
 	GROQ_API_KEY: str | None = None
